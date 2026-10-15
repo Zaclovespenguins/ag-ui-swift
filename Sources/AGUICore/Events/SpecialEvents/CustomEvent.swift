@@ -89,7 +89,9 @@ public struct CustomEvent: AGUIEvent, Equatable, Sendable {
     /// expected structure of the custom data. Use this when you have a specific
     /// type that conforms to `Decodable` for your custom event.
     ///
-    /// - Parameter type: The type to decode the data as (must conform to `Decodable`)
+    /// - Parameters:
+    ///   - type: The type to decode the data as (must conform to `Decodable`)
+    ///   - decoder: The `JSONDecoder` used to decode the value. Defaults to a standard `JSONDecoder`.
     /// - Returns: A decoded instance of the specified type
     /// - Throws: A `DecodingError` if the data cannot be decoded as the specified type
     ///

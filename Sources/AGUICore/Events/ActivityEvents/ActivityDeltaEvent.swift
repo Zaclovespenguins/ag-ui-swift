@@ -97,7 +97,9 @@ public struct ActivityDeltaEvent: AGUIEvent, Equatable, Sendable {
     /// structure of the JSON Patch operations. Use this when you have a specific
     /// type that conforms to `Decodable`.
     ///
-    /// - Parameter type: The element type to decode the patch array as (must conform to `Decodable`)
+    /// - Parameters:
+    ///   - type: The element type to decode the patch array as (must conform to `Decodable`)
+    ///   - decoder: The `JSONDecoder` used to decode the value. Defaults to a standard `JSONDecoder`.
     /// - Returns: An array of decoded instances of the specified type
     /// - Throws: A `DecodingError` if the patch cannot be decoded as the specified type
     public func parsedPatch<T: Decodable>(as type: T.Type, decoder: JSONDecoder = JSONDecoder()) throws -> [T] {

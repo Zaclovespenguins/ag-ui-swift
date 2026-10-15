@@ -44,7 +44,7 @@ public enum AgentBuilders {
     /// Creates a stateless ``AgUiAgent`` backed by a tool registry.
     ///
     /// Tool definitions are included in every `RunAgentInput` and tool calls from
-    /// the agent are executed automatically via ``ToolExecutionManager``.
+    /// the agent are executed automatically via `ToolExecutionManager`.
     ///
     /// - Parameters:
     ///   - url: Base URL of the AG-UI agent server.

@@ -31,8 +31,8 @@ import Foundation
 /// ## Serialization
 ///
 /// InputContent types use the DTO pattern for serialization:
-/// - Decoding is handled by ``TextInputContentDTO`` and ``BinaryInputContentDTO``
-/// - Encoding is handled by ``UserMessageDTO`` when encoding UserMessage
+/// - Decoding is handled by `TextInputContentDTO` and `BinaryInputContentDTO`
+/// - Encoding is handled by `UserMessageDTO` when encoding UserMessage
 ///
 /// - SeeAlso: ``TextInputContent``, ``BinaryInputContent``, ``UserMessage``
 public protocol InputContent: Sendable, Hashable {

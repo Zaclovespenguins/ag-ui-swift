@@ -279,25 +279,25 @@ jobs:
             </header>
             
             <div class="targets">
-              <a href="./AGUICore/" class="target-card">
+              <a href="./AGUICore/documentation/aguicore/" class="target-card">
                 <h2>AGUICore</h2>
                 <p>Core event types, decoding infrastructure, and protocol implementations. The foundation of the AG-UI Swift SDK.</p>
                 <span class="link">View Documentation</span>
               </a>
               
-              <a href="./AGUIClient/" class="target-card">
+              <a href="./AGUIClient/documentation/aguiclient/" class="target-card">
                 <h2>AGUIClient</h2>
                 <p>Client-side functionality for connecting to AG-UI protocol servers and managing agent interactions.</p>
                 <span class="link">View Documentation</span>
               </a>
               
-              <a href="./AGUITools/" class="target-card">
+              <a href="./AGUITools/documentation/aguitools/" class="target-card">
                 <h2>AGUITools</h2>
                 <p>Utility tools and helpers for working with AG-UI events and protocol features.</p>
                 <span class="link">View Documentation</span>
               </a>
               
-              <a href="./AGUIAgentSDK/" class="target-card">
+              <a href="./AGUIAgentSDK/documentation/aguiagentsdk/" class="target-card">
                 <h2>AGUIAgentSDK</h2>
                 <p>High-level APIs for building agent applications with AG-UI protocol support.</p>
                 <span class="link">View Documentation</span>

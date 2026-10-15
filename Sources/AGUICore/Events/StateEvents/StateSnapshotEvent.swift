@@ -74,7 +74,9 @@ public struct StateSnapshotEvent: AGUIEvent, Equatable, Sendable {
     /// expected structure of the snapshot. Use this when you have a specific
     /// type that conforms to `Decodable`.
     ///
-    /// - Parameter type: The type to decode the snapshot as (must conform to `Decodable`)
+    /// - Parameters:
+    ///   - type: The type to decode the snapshot as (must conform to `Decodable`)
+    ///   - decoder: The `JSONDecoder` used to decode the value. Defaults to a standard `JSONDecoder`.
     /// - Returns: A decoded instance of the specified type
     /// - Throws: A `DecodingError` if the snapshot cannot be decoded as the specified type
     ///

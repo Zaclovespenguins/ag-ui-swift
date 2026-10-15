@@ -3,20 +3,23 @@ set -e
 
 echo "🧹 Cleaning old test docs..."
 rm -rf docs-test
-mkdir -p docs-test
+# Mirror the GitHub Pages layout (https://<user>.github.io/ag-ui-swift/) so the
+# absolute /ag-ui-swift/<Target> hosting base path resolves when served locally.
+SITE_DIR=./docs-test/ag-ui-swift
+mkdir -p "$SITE_DIR"
 
 echo "📚 Generating documentation for all targets..."
 for target in AGUICore AGUIClient AGUITools AGUIAgentSDK; do
   echo "  📖 Generating docs for $target..."
-  swift package --allow-writing-to-directory ./docs-test/$target \
+  swift package --allow-writing-to-directory $SITE_DIR/$target \
     generate-documentation --target $target \
     --disable-indexing \
     --transform-for-static-hosting \
     --hosting-base-path /ag-ui-swift/$target \
-    --output-path ./docs-test/$target
+    --output-path $SITE_DIR/$target
   
   # Verify index.html was created
-  if [ ! -f "./docs-test/$target/index.html" ]; then
+  if [ ! -f "$SITE_DIR/$target/index.html" ]; then
     echo "  ⚠️  Warning: index.html not found for $target"
   else
     echo "  ✅ Successfully generated docs for $target"
@@ -24,20 +27,8 @@ for target in AGUICore AGUIClient AGUITools AGUIAgentSDK; do
 done
 
 echo ""
-echo "🔧 Fixing filenames (colons -> hyphens)..."
-find ./docs-test -depth -name "*:*" | while read -r file; do
-  dir=$(dirname "$file")
-  base=$(basename "$file")
-  newbase=$(echo "$base" | tr ':' '-')
-  mv "$file" "$dir/$newbase"
-done
-
-echo "🔧 Updating JSON references..."
-find ./docs-test -name "*.json" -type f -exec sed -i '' 's/:/\\-/g' {} +
-
-echo ""
 echo "📄 Creating landing page..."
-cat > ./docs-test/index.html << 'LANDING_EOF'
+cat > "$SITE_DIR/index.html" << 'LANDING_EOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -88,22 +79,22 @@ cat > ./docs-test/index.html << 'LANDING_EOF'
       <p>Comprehensive API Documentation</p>
     </header>
     <div class="targets">
-      <a href="./AGUICore/" class="target-card">
+      <a href="./AGUICore/documentation/aguicore/" class="target-card">
         <h2>AGUICore</h2>
         <p>Core event types, decoding infrastructure, and protocol implementations.</p>
         <span class="link">View Documentation →</span>
       </a>
-      <a href="./AGUIClient/" class="target-card">
+      <a href="./AGUIClient/documentation/aguiclient/" class="target-card">
         <h2>AGUIClient</h2>
         <p>Client-side functionality for connecting to AG-UI protocol servers.</p>
         <span class="link">View Documentation →</span>
       </a>
-      <a href="./AGUITools/" class="target-card">
+      <a href="./AGUITools/documentation/aguitools/" class="target-card">
         <h2>AGUITools</h2>
         <p>Utility tools and helpers for working with AG-UI events.</p>
         <span class="link">View Documentation →</span>
       </a>
-      <a href="./AGUIAgentSDK/" class="target-card">
+      <a href="./AGUIAgentSDK/documentation/aguiagentsdk/" class="target-card">
         <h2>AGUIAgentSDK</h2>
         <p>High-level APIs for building agent applications.</p>
         <span class="link">View Documentation →</span>
@@ -120,9 +111,15 @@ LANDING_EOF
 echo "📝 Creating .nojekyll file..."
 touch ./docs-test/.nojekyll
 
+# Redirect the server root to the site root for convenience
+cat > ./docs-test/index.html << 'REDIRECT_EOF'
+<!DOCTYPE html>
+<meta http-equiv="refresh" content="0; url=/ag-ui-swift/">
+REDIRECT_EOF
+
 echo ""
 echo "📁 Generated documentation structure:"
-ls -la ./docs-test/ | grep "^d" | awk '{print "  📂 " $NF}'
+ls -la "$SITE_DIR/" | grep "^d" | awk '{print "  📂 " $NF}'
 
 echo ""
 echo "✅ Documentation generated successfully!"
@@ -131,8 +128,8 @@ echo "🌐 Testing Options:"
 echo ""
 echo "Option 1: Simple HTTP Server (basic testing)"
 echo "  Run: python3 -m http.server 8000 --directory docs-test"
-echo "  Open: http://localhost:8000"
-echo "  Note: Links will work, but assets may not load correctly due to base path"
+echo "  Open: http://localhost:8000/ag-ui-swift/"
+echo "  Note: Docs are built under docs-test/ag-ui-swift/ so the /ag-ui-swift/ base path resolves"
 echo ""
 echo "Option 2: Test structure verification"
 echo "  Run: ./verify-docs-structure.sh"
@@ -141,7 +138,7 @@ echo ""
 echo "Option 3: Manual inspection"
 echo "  Check that each target has an index.html:"
 for target in AGUICore AGUIClient AGUITools AGUIAgentSDK; do
-  if [ -f "./docs-test/$target/index.html" ]; then
+  if [ -f "$SITE_DIR/$target/index.html" ]; then
     echo "    ✅ $target/index.html exists"
   else
     echo "    ❌ $target/index.html MISSING"

@@ -99,7 +99,9 @@ public struct ActivitySnapshotEvent: AGUIEvent, Equatable, Sendable {
     /// expected structure of the content. Use this when you have a specific
     /// type that conforms to `Decodable`.
     ///
-    /// - Parameter type: The type to decode the content as (must conform to `Decodable`)
+    /// - Parameters:
+    ///   - type: The type to decode the content as (must conform to `Decodable`)
+    ///   - decoder: The `JSONDecoder` used to decode the value. Defaults to a standard `JSONDecoder`.
     /// - Returns: A decoded instance of the specified type
     /// - Throws: A `DecodingError` if the content cannot be decoded as the specified type
     public func parsedContent<T: Decodable>(as type: T.Type, decoder: JSONDecoder = JSONDecoder()) throws -> T {
