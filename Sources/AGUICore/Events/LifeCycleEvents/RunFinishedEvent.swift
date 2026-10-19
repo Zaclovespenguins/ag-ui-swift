@@ -2,10 +2,11 @@
 
 import Foundation
 
-/// Event indicating that an agent run has completed successfully.
+/// Event indicating that an agent run has ended.
 ///
-/// This event is emitted when an agent has finished processing a run request
-/// and has generated all output. It signals the end of the execution lifecycle.
+/// This event is emitted when an agent has finished processing a run request.
+/// It signals the end of the execution lifecycle; `outcome` says whether the
+/// run completed, was cancelled, or paused for human input.
 ///
 public struct RunFinishedEvent: AGUIEvent, Equatable, Hashable, Sendable {
 
@@ -20,7 +21,8 @@ public struct RunFinishedEvent: AGUIEvent, Equatable, Hashable, Sendable {
     /// Why the run finished.
     ///
     /// Decoded from the `"outcome"` field in the AG-UI wire format.
-    /// Defaults to `.completed` when the field is absent or unrecognised.
+    /// Defaults to `.success` when the field is absent. Check for
+    /// `.interrupt` to see whether the run paused for human input.
     public let outcome: RunFinishedOutcome
 
     /// Optional run result as raw JSON.
@@ -45,14 +47,14 @@ public struct RunFinishedEvent: AGUIEvent, Equatable, Hashable, Sendable {
     /// - Parameters:
     ///   - threadId: The conversation thread identifier
     ///   - runId: The unique run identifier
-    ///   - outcome: Why the run finished (defaults to `.completed`)
+    ///   - outcome: Why the run finished (defaults to `.success`)
     ///   - result: Optional run result as raw JSON data
     ///   - timestamp: Optional timestamp in milliseconds since epoch
     ///   - rawEvent: Optional raw event data as received from the agent
     public init(
         threadId: String,
         runId: String,
-        outcome: RunFinishedOutcome = .completed,
+        outcome: RunFinishedOutcome = .success(),
         result: Data? = nil,
         timestamp: Int64? = nil,
         rawEvent: Data? = nil
@@ -71,6 +73,6 @@ public struct RunFinishedEvent: AGUIEvent, Equatable, Hashable, Sendable {
 extension RunFinishedEvent: CustomStringConvertible {
 
     public var description: String {
-        "RunFinishedEvent(threadId: \(threadId), runId: \(runId), outcome: \(outcome.rawValue), timestamp: \(timestamp?.description ?? "nil"))"
+        "RunFinishedEvent(threadId: \(threadId), runId: \(runId), outcome: \(outcome), timestamp: \(timestamp?.description ?? "nil"))"
     }
 }

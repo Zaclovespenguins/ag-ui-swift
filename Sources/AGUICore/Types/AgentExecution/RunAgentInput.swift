@@ -21,6 +21,7 @@ import Foundation
 /// - **tools**: Available tools the agent can invoke
 /// - **context**: Additional contextual information
 /// - **forwardedProps**: Custom properties to forward to the agent
+/// - **resume**: Answers to the interrupts that ended a previous run
 ///
 public struct RunAgentInput: Sendable, Codable, Hashable {
     /// The conversation thread identifier.
@@ -57,6 +58,14 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
     /// Defaults to an empty JSON object.
     public let forwardedProps: Data
 
+    /// Answers to the interrupts that ended a previous run, when this run
+    /// continues from one.
+    ///
+    /// `nil` when the run is not a resume; the field is then omitted on the wire.
+    ///
+    /// - Note: Interrupts are a draft extension of the AG-UI protocol.
+    public let resume: [ResumeEntry]?
+
     /// Creates a new agent input.
     ///
     /// - Parameters:
@@ -68,6 +77,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
     ///   - tools: Available tools (defaults to empty)
     ///   - context: Context items (defaults to empty)
     ///   - forwardedProps: Custom properties as JSON (defaults to empty object)
+    ///   - resume: Answers to a previous run's interrupts (defaults to `nil`)
     public init(
         threadId: String,
         runId: String,
@@ -76,7 +86,8 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         messages: [any Message] = [],
         tools: [Tool] = [],
         context: [Context] = [],
-        forwardedProps: Data = Data("{}".utf8)
+        forwardedProps: Data = Data("{}".utf8),
+        resume: [ResumeEntry]? = nil
     ) {
         self.threadId = threadId
         self.runId = runId
@@ -86,6 +97,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         self.tools = tools
         self.context = context
         self.forwardedProps = forwardedProps
+        self.resume = resume
     }
 
     // MARK: - Codable
@@ -99,6 +111,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         case tools
         case context
         case forwardedProps
+        case resume
     }
 
     public init(from decoder: Decoder) throws {
@@ -146,6 +159,8 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         } else {
             forwardedProps = Data("{}".utf8)
         }
+
+        resume = try container.decodeIfPresent([ResumeEntry].self, forKey: .resume)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -187,6 +202,10 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         let propsObject = try JSONSerialization.jsonObject(with: forwardedProps)
         var propsContainer = container.nestedContainer(keyedBy: JSONCodingKeys.self, forKey: .forwardedProps)
         try propsContainer.encodeJSONObject(propsObject)
+
+        // Omit resume entirely when unset: the reference schema treats it as
+        // optional and rejects an explicit null.
+        try container.encodeIfPresent(resume, forKey: .resume)
     }
 
     // MARK: - Hashable
@@ -199,6 +218,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         hasher.combine(tools)
         hasher.combine(context)
         hasher.combine(forwardedProps)
+        hasher.combine(resume)
 
         // Hash each message's identifying properties
         for message in messages {
@@ -217,6 +237,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
               lhs.tools == rhs.tools &&
               lhs.context == rhs.context &&
               lhs.forwardedProps == rhs.forwardedProps &&
+              lhs.resume == rhs.resume &&
               lhs.messages.count == rhs.messages.count else {
             return false
         }

@@ -18,6 +18,7 @@ public struct RunAgentInputBuilder {
     private var _tools: [Tool] = []
     private var _context: [Context] = []
     private var _forwardedProps = Data("{}".utf8)
+    private var _resume: [ResumeEntry]?
 
     /// Creates a new builder instance.
     public init() {}
@@ -124,6 +125,18 @@ public struct RunAgentInputBuilder {
         return builder
     }
 
+    // MARK: - Resume
+
+    /// Sets the answers to a previous run's interrupts.
+    ///
+    /// - Parameter resume: One entry per open interrupt
+    /// - Returns: A new builder instance with the resume entries set
+    public func resume(_ resume: [ResumeEntry]) -> Self {
+        var builder = self
+        builder._resume = resume
+        return builder
+    }
+
     // MARK: - Context
 
     /// Adds a single context item to the contextual information.
@@ -182,7 +195,8 @@ public struct RunAgentInputBuilder {
             messages: _messages,
             tools: _tools,
             context: _context,
-            forwardedProps: _forwardedProps
+            forwardedProps: _forwardedProps,
+            resume: _resume
         )
     }
 }

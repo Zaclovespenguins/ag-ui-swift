@@ -48,21 +48,14 @@ struct RunFinishedEventDTO {
             )
         }
 
-        // Decode outcome; unknown or missing values fall back to .completed for
-        // forward-compatibility with future protocol versions.
-        let outcome: RunFinishedOutcome
-        if let raw = jsonObject["outcome"] as? String,
-           let parsed = RunFinishedOutcome(rawValue: raw) {
-            outcome = parsed
-        } else {
-            outcome = .completed
-        }
+        let outcome = try decodeOutcome(jsonObject["outcome"])
 
         let timestamp = try EventDecodingHelpers.extractTimestamp(from: jsonObject)
 
         var resultData: Data?
         if let resultValue = jsonObject["result"], !(resultValue is NSNull) {
-            resultData = try? JSONSerialization.data(withJSONObject: resultValue)
+            // `result` may be any JSON value, including a top-level scalar.
+            resultData = try? JSONSerialization.data(withJSONObject: resultValue, options: .fragmentsAllowed)
         }
 
         return RunFinishedEventDTO(threadId: threadId, runId: runId, outcome: outcome, result: resultData, timestamp: timestamp)
@@ -72,7 +65,87 @@ struct RunFinishedEventDTO {
         RunFinishedEvent(threadId: threadId, runId: runId, outcome: outcome, result: result, timestamp: timestamp, rawEvent: rawEvent)
     }
 
+    /// Decodes the `"outcome"` field.
+    ///
+    /// Absent or null means success. A value that is present but not a known
+    /// outcome object becomes `.unknown` rather than `.success`, so a run is
+    /// never reported as completed when the producer said otherwise. A
+    /// malformed interrupt outcome throws, because dropping its interrupts
+    /// would leave the run paused with nothing to answer.
+    private static func decodeOutcome(_ raw: Any?) throws -> RunFinishedOutcome {
+        guard let raw, !(raw is NSNull) else {
+            return .success()
+        }
+        guard let object = raw as? [String: Any] else {
+            return .unknown(type: raw as? String ?? "")
+        }
+        guard let type = object["type"] as? String else {
+            return .unknown(type: "")
+        }
+
+        switch type {
+        case "success":
+            return .success(pendingToolCallIds: object["pendingToolCallIds"] as? [String] ?? [])
+        case "cancelled":
+            return .cancelled
+        case "interrupt":
+            guard let interrupts = object["interrupts"] as? [[String: Any]] else {
+                throw DecodingError.typeMismatch(
+                    [Any].self,
+                    DecodingError.Context(
+                        codingPath: [CodingKeys.outcome],
+                        debugDescription: "Interrupt outcome requires an 'interrupts' array of objects"
+                    )
+                )
+            }
+            return .interrupt(try interrupts.map(decodeInterrupt))
+        default:
+            return .unknown(type: type)
+        }
+    }
+
+    private static func decodeInterrupt(_ object: [String: Any]) throws -> Interrupt {
+        guard let id = object["id"] as? String else {
+            throw DecodingError.keyNotFound(
+                InterruptCodingKeys.id,
+                DecodingError.Context(
+                    codingPath: [CodingKeys.outcome],
+                    debugDescription: "Missing required interrupt field: id"
+                )
+            )
+        }
+        guard let reason = object["reason"] as? String else {
+            throw DecodingError.keyNotFound(
+                InterruptCodingKeys.reason,
+                DecodingError.Context(
+                    codingPath: [CodingKeys.outcome],
+                    debugDescription: "Missing required interrupt field: reason"
+                )
+            )
+        }
+
+        func jsonData(_ key: InterruptCodingKeys) -> Data? {
+            guard let value = object[key.rawValue], !(value is NSNull) else { return nil }
+            return try? JSONSerialization.data(withJSONObject: value, options: .fragmentsAllowed)
+        }
+
+        return Interrupt(
+            id: id,
+            reason: InterruptReason(rawValue: reason),
+            message: object["message"] as? String,
+            toolCallId: object["toolCallId"] as? String,
+            responseSchema: jsonData(.responseSchema),
+            expiresAt: object["expiresAt"] as? String,
+            metadata: jsonData(.metadata),
+            subagentRunId: object["subagentRunId"] as? String
+        )
+    }
+
     private enum CodingKeys: String, CodingKey {
         case threadId, runId, outcome, result, timestamp
+    }
+
+    private enum InterruptCodingKeys: String, CodingKey {
+        case id, reason, responseSchema, metadata
     }
 }
