@@ -70,7 +70,7 @@ public struct AgUiAgentConfig: Sendable {
     ///
     /// When set, tool definitions are included in every `RunAgentInput` and
     /// tool calls from the agent are executed automatically via
-    /// ``ToolExecutionManager``.
+    /// `ToolExecutionManager`.
     ///
     /// Default: `nil`
     public var toolRegistry: (any ToolRegistry)?

@@ -6,10 +6,10 @@ echo ""
 ERRORS=0
 
 # Check landing page
-if [ -f "./docs-test/index.html" ]; then
-  echo "✅ Landing page exists: docs-test/index.html"
+if [ -f "./docs-test/ag-ui-swift/index.html" ]; then
+  echo "✅ Landing page exists: docs-test/ag-ui-swift/index.html"
 else
-  echo "❌ Landing page missing: docs-test/index.html"
+  echo "❌ Landing page missing: docs-test/ag-ui-swift/index.html"
   ERRORS=$((ERRORS + 1))
 fi
 
@@ -26,13 +26,13 @@ for target in AGUICore AGUIClient AGUITools AGUIAgentSDK; do
   echo ""
   echo "Checking $target..."
   
-  if [ ! -d "./docs-test/$target" ]; then
-    echo "  ❌ Directory missing: docs-test/$target"
+  if [ ! -d "./docs-test/ag-ui-swift/$target" ]; then
+    echo "  ❌ Directory missing: docs-test/ag-ui-swift/$target"
     ERRORS=$((ERRORS + 1))
     continue
   fi
   
-  if [ -f "./docs-test/$target/index.html" ]; then
+  if [ -f "./docs-test/ag-ui-swift/$target/index.html" ]; then
     echo "  ✅ index.html exists"
   else
     echo "  ❌ index.html missing"
@@ -40,13 +40,13 @@ for target in AGUICore AGUIClient AGUITools AGUIAgentSDK; do
   fi
   
   # Check for common DocC files
-  if [ -d "./docs-test/$target/css" ]; then
+  if [ -d "./docs-test/ag-ui-swift/$target/css" ]; then
     echo "  ✅ css/ directory exists"
   else
     echo "  ⚠️  css/ directory missing (may be normal)"
   fi
   
-  if [ -d "./docs-test/$target/js" ]; then
+  if [ -d "./docs-test/ag-ui-swift/$target/js" ]; then
     echo "  ✅ js/ directory exists"
   else
     echo "  ⚠️  js/ directory missing (may be normal)"
