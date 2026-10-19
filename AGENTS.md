@@ -1,58 +1,58 @@
-# AGENTS
+# AGENTS.md
 
-<!-- Skills section removed -->
+## Project
+This repository is AGUISwift, a Swift package implementing the client side of the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui): protocol types and event decoding, an HTTP/SSE transport, a tool framework, and high-level agent APIs.
 
-<skills_system priority="1">
+- Platforms: iOS 16+, macOS 13+. `swift-tools-version` is 5.9, so targets compile in the Swift 5 language mode with no upcoming features enabled.
+- The only package dependency is `swift-docc-plugin`.
+- Protocol reference: the [AG-UI docs](https://docs.ag-ui.com) and the TypeScript SDK. API reference for parity: the [Kotlin community SDK](https://github.com/ag-ui-protocol/ag-ui/tree/main/sdks/community/kotlin).
 
-## Available Skills
+## Layout
+Modules, lowest to highest (see `ARCHITECTURE.md`):
 
-<!-- SKILLS_TABLE_START -->
-<usage>
-When users ask you to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.
+- `Sources/AGUICore/`: protocol types, events, and message definitions; no dependencies.
+  - `Events/` holds the event models, `Decoding/EventDTO/` their wire decoders, and `Decoding/Registry/` the per-category tables that map each `EventType` to its decoder. A new event touches all three plus `EventType.swift`.
+  - `Types/` holds messages, tools, input content, and `RunAgentInput` (with `RunAgentInputBuilder`).
+- `Sources/AGUIClient/` (depends on AGUICore): `HttpAgent`, `AbstractAgent`, SSE parsing and event streams, transport, and state application.
+- `Sources/AGUITools/` (depends on AGUICore): tool registry, executor, and error handling.
+- `Sources/AGUIAgentSDK/` (depends on all three): `AgUiAgent`, `StatefulAgUiAgent`, `ChatAgent`, conversation history, and builders.
+- `Tests/<Module>Tests/`: XCTest suites per module. Shared decoder helpers and fixtures are in `Tests/AGUICoreTests/Helpers/`; mocks such as `MockHTTPClient` and `MockToolRegistry` live beside the tests that use them.
+- `Examples/ChatApp/`: the package's example app.
+- `plans/` and `IMPLEMENTATION_PLAN.md`: parity and implementation plans. `docs/WORKFLOW.md` and `CONTRIBUTING.md`: the git workflow.
 
-How to use skills:
-- Invoke: Bash("openskills read <skill-name>")
-- The skill content will load with detailed instructions on how to complete the task
-- Base directory provided in output for resolving bundled resources (references/, scripts/, assets/)
+## Working conventions
+- **Test-driven development is required.** Write failing tests first, confirm they fail for the expected reason, then implement. Cover edge cases and error paths, and mock external dependencies (network, LLM providers).
+- For wire-format changes, check against the reference SDK as well as Swift round trips: decode JSON produced by `@ag-ui/encoder` in tests, and validate the JSON this package sends against the schemas in `@ag-ui/core/schemas`.
+- Public protocol types are value types conforming to `Sendable`, `Equatable`, and `Hashable`, with doc comments. Fields typed as arbitrary JSON are stored as raw `Data`.
+- Follow the surrounding style and keep changes focused on the task.
+- Use US English in code, comments, and docs.
 
-Usage notes:
-- Only use skills listed in <available_skills> below
-- Do not invoke a skill that is already loaded in your context
-- Each skill invocation is stateless
-</usage>
+## Concurrency
+- Use `async`/`await` and structured concurrency (`async let`, task groups) over callbacks and dispatch queues. Don't use `DispatchQueue.main.async` or `DispatchQueue.global().async` in new code.
+- Use an `actor` for shared mutable state, as the existing transport and tool types do. Apply `@MainActor` explicitly to UI-bound types; there is no module-wide default isolation.
+- Don't use `assumeIsolated`. SwiftLint enforces this as an error.
+- Don't use `nonisolated(unsafe)`, `@unchecked Sendable`, `unsafeBitCast`, `unsafeDowncast`, `UnsafePointer` and related types, or `withUnsafe*`. If one is genuinely needed (FFI, a profiler-confirmed hot path), document why in a decision record.
+- Avoid unstructured `Task {}`. When one is needed, store the handle and cancel it when the owner goes away or the work is cancelled, as the streaming types do. The exception is a one-shot `Task {}` that calls a single async function from a synchronous context, such as a button action, which does not need to be stored.
+- The `swift-concurrency` skill in `.claude/skills/swift-concurrency/` (start with `SKILL.md`) has detailed guidance for concurrency work.
 
-<available_skills>
+## Logging
+- There is no logging framework yet. Don't add unconditional `print()` calls in `Sources/`; keep debug output behind `#if DEBUG`, as the existing stream diagnostics do. Adding a logger such as swift-log is a separate decision.
+- Never log credentials, tokens, or user content in full.
 
-<skill>
-<name>swift-concurrency</name>
-<description>'Expert guidance on Swift Concurrency best practices, patterns, and implementation. Use when developers mention: (1) Swift Concurrency, async/await, actors, or tasks, (2) "use Swift Concurrency" or "modern concurrency patterns", (3) migrating to Swift 6, (4) data races or thread safety issues, (5) refactoring closures to async/await, (6) @MainActor, Sendable, or actor isolation, (7) concurrent code architecture or performance optimization, (8) concurrency-related linter warnings (SwiftLint or similar; e.g. async_without_await, Sendable/actor isolation/MainActor lint).'</description>
-<location>project</location>
-</skill>
+## Git workflow
+- Branch from an up-to-date `main` and work on a feature branch, for example `feature/agent-memory-system`, `fix/orchestration-race-condition`, or `refactor/protocol-conformance`. `scripts/install-git-hooks.sh` installs a pre-commit hook that blocks direct commits to `main`.
+- Use conventional commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`) with a first line under 50 characters. Don't include AI attribution in commit messages.
+- Before committing: `swift build`, `swift test`, and `swiftlint lint` must pass, and new public APIs need doc comments.
+- Don't commit Xcode churn in `Examples/ChatApp/` (project format bumps, personal development team IDs).
+- `docs-test/` is local DocC preview output generated by `test-docs-local.sh`. Don't commit regenerated output.
 
-</available_skills>
-<!-- SKILLS_TABLE_END -->
+## Validation
+- `swift build` and `swift test` from the repository root. `swift test --filter <TestClass>` runs one suite.
+- `swiftlint lint` (install with `brew install swiftlint`). `.swiftlint.yml` lints `Sources/` and `Package.swift` only, with `force_cast`, `force_try`, `force_unwrapping`, `large_tuple`, and the `no_assume_isolated` custom rule.
+- CI (`.github/workflows/ci.yml`) runs build, tests, and SwiftLint on macOS for pushes and PRs to `main`. Its `xcodebuild` iOS and macOS steps end in `|| true`, so they never fail CI; build for those platforms yourself when a change could affect them.
+- Report what was validated and any checks that could not run.
 
-</skills_system>
-
-### Concurrency Rules
-
-Swift 6 targets enable NonisolatedNonsendingByDefault and InferIsolatedConformances.
-
-- **No default `@MainActor` isolation** at module level. Apply `@MainActor` explicitly where needed (views, view models, UI-bound types).
-- **Use `@concurrent`** to mark a nonisolated async function that must run on the cooperative pool, not the caller's actor.
-- **Do not use `assumeIsolated`**. Use explicit isolation annotations (`@MainActor`) or restructure the code.
-- **Do not use `DispatchQueue.main.async` or `DispatchQueue.global().async`** in new code. Use `async/await` and `@MainActor` functions.
-- **Do not create custom actors.** Use `@MainActor`, `LeagueLocked`, or `NSLock` instead.
-- **Non-Sendable first.** Default to plain, nonisolated, non-`Sendable` types. `Sendable` and isolation are constraints — only add them when a type must cross an isolation boundary. Reach for `@MainActor`, `Sendable`, or `LeagueLocked` only when the compiler requires it.
-- **No `unsafe`/`unchecked` APIs.** Do not use `nonisolated(unsafe)`, `@unchecked Sendable`, `unsafeBitCast`, `unsafeDowncast`, `UnsafePointer` & friends, or `withUnsafe*`. For shared mutable state use `LeagueLocked` or `NSLock`. If genuinely needed (FFI, profiler-confirmed hot path), document why and open a decision record.
-- **No new `unsafe`/`unchecked` APIs in app code.** Do not introduce `nonisolated(unsafe)`, new ad hoc `@unchecked Sendable` conformances, `unsafeBitCast`, `unsafeDowncast`, `UnsafePointer` & friends, or `withUnsafe*`. `LeagueLocked` is an allowed, vetted wrapper for shared mutable state even though it uses `@unchecked Sendable` internally; otherwise use `NSLock`. If genuinely needed (FFI, profiler-confirmed hot path), document why and open a decision record.
-- **No `unsafe`/`unchecked` APIs.** Do not use `nonisolated(unsafe)`, `@unchecked Sendable`, `unsafeBitCast`, `unsafeDowncast`, `UnsafePointer` & friends, or `withUnsafe*`. For shared mutable state use `NSLock`, but keep lock-protected critical sections synchronous/non-suspending — never hold a lock across an `await` or any other suspension point. Prefer `NSLock {}`-style APIs where available to make that constraint obvious. If genuinely needed (FFI, profiler-confirmed hot path), document why and open a decision record.
-- **No `unsafe`/`unchecked` APIs.** Do not use `nonisolated(unsafe)`, `@unchecked Sendable`, `unsafeBitCast`, `unsafeDowncast`, `UnsafePointer` & friends, or `withUnsafe*`. For shared mutable state use `NSLock`. If genuinely needed (FFI, profiler-confirmed hot path), document why and open a decision record.
-
-### Unstructured `Task {}`
-
-Avoid `Task {}`. Prefer `async` functions, `async let`, and task groups.
-
-If you must use `Task {}`, store the handle and cancel it when the owner is deallocated.
-
-**Exception:** A one-shot `Task {}` that calls a single async function from a synchronous context (e.g. a button action) does not need to be stored:
+## Known gaps
+- No SDK-level interrupt/resume flow yet: `AgUiAgent` and `StatefulAgUiAgent` don't surface interrupts or send `resume`.
+- `ClientToolResponseHandler` should send the full history and a fresh `runId`, and pass the agent's reply through instead of discarding it.
+- `CONTRIBUTING.md` and `README.md` still mention a SwiftFormat plugin that the package doesn't include.
