@@ -124,17 +124,16 @@ We welcome contributions! Please follow our development workflow:
 - **Code review required** - PRs must be approved by designated reviewers before merging
 - **Branch naming**: `feature/`, `fix/`, `refactor/`, `docs/`
 - **Follow TDD**: Write tests first, then implement
-- **Code quality**: Format with SwiftFormat, lint with SwiftLint
+- **Code quality**: Lint with SwiftLint
 
 See detailed guides:
 - [Contributing Guide](CONTRIBUTING.md) - Full workflow and standards
 - [Workflow Quick Reference](docs/WORKFLOW.md) - Common tasks and commands
-- [Project Standards](CLAUDE.md) - Code conventions and architecture
+- [Project Standards](AGENTS.md) - Code conventions and architecture
 
 ### Before Submitting PR
 
 - [ ] Tests pass: `swift test`
-- [ ] Code formatted: `swift package plugin swiftformat`
 - [ ] Linting passes: `swiftlint lint`
 - [ ] Documentation updated
 - [ ] Commit messages follow conventions

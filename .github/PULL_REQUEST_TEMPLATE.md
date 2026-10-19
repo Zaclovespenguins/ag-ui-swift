@@ -25,7 +25,6 @@
 
 ## Code Quality
 <!-- Confirm code quality checks -->
-- [ ] Code formatted (`swift package plugin swiftformat`)
 - [ ] SwiftLint passes (`swiftlint lint`)
 - [ ] No violations in production code
 - [ ] Documentation comments added/updated for public APIs
@@ -55,7 +54,7 @@ Relates to #
 
 ## Reviewer Checklist
 <!-- For reviewers - do not edit -->
-- [ ] Code follows project standards (CLAUDE.md)
+- [ ] Code follows project standards (AGENTS.md)
 - [ ] Tests are comprehensive and pass
 - [ ] Documentation is clear and complete
 - [ ] No unnecessary changes or scope creep

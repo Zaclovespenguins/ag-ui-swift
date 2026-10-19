@@ -32,15 +32,12 @@ git checkout -b fix/bug-description
 
 ### 2. Make Your Changes
 
-Follow our development standards from `CLAUDE.md`:
+Follow our development standards from `AGENTS.md`:
 
 ```bash
 # Make changes to code
 # Run tests frequently
 swift test
-
-# Format code
-swift package plugin --allow-writing-to-package-directory swiftformat
 
 # Check for linting issues
 swiftlint lint
@@ -101,7 +98,6 @@ Implements user authentication for HttpAgent with bearer token support.
 - [x] Unit tests pass
 - [x] Integration tests pass
 - [x] SwiftLint passes
-- [x] SwiftFormat applied
 
 ## Related Issues
 Closes #42
@@ -134,7 +130,6 @@ gh pr create
 Before creating a PR, ensure:
 
 - [ ] All tests pass (`swift test`)
-- [ ] Code is formatted (`swift package plugin swiftformat`)
 - [ ] No SwiftLint violations in production code (`swiftlint lint`)
 - [ ] Documentation is updated
 - [ ] Commit messages follow conventions
@@ -199,7 +194,7 @@ All PRs must include tests following TDD principles:
 2. **Implement feature** (Green phase)
 3. **Refactor** (Clean phase)
 
-See `CLAUDE.md` for detailed testing guidelines.
+See `AGENTS.md` for detailed testing guidelines.
 
 ## Code Review Guidelines
 
@@ -265,7 +260,7 @@ Hotfix PRs can be fast-tracked but still require review.
 
 ## Getting Help
 
-- Check `CLAUDE.md` for project standards
+- Check `AGENTS.md` for project standards
 - Review existing PRs for examples
 - Ask in PR comments if unclear
 - Contact maintainers for guidance

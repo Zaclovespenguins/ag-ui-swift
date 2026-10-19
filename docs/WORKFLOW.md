@@ -103,9 +103,6 @@ swift build
 # Test
 swift test
 
-# Format
-swift package plugin --allow-writing-to-package-directory swiftformat
-
 # Lint
 swiftlint lint
 ```
@@ -377,7 +374,7 @@ gh pr review --help
 ### Documentation
 
 - Full guide: `CONTRIBUTING.md`
-- Project standards: `CLAUDE.md`
+- Project standards: `AGENTS.md`
 - Architecture: `ARCHITECTURE.md`
 
 ### Common Issues

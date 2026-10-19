@@ -55,4 +55,3 @@ Modules, lowest to highest (see `ARCHITECTURE.md`):
 ## Known gaps
 - No SDK-level interrupt/resume flow yet: `AgUiAgent` and `StatefulAgUiAgent` don't surface interrupts or send `resume`.
 - `ClientToolResponseHandler` should send the full history and a fresh `runId`, and pass the agent's reply through instead of discarding it.
-- `CONTRIBUTING.md` and `README.md` still mention a SwiftFormat plugin that the package doesn't include.
