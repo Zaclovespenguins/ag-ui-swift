@@ -91,6 +91,21 @@ extension UnkeyedDecodingContainer {
     }
 }
 
+// MARK: - Boolean Detection
+
+/// Returns the value as a `Bool` only if it is a real boolean.
+///
+/// Values from `JSONSerialization` are `NSNumber`s, and `NSNumber(value: 1)` casts
+/// to `Bool` with `as? Bool`. Checking for a `CFBoolean` keeps JSON `0` and `1`
+/// encoding as numbers while `true` and `false` stay booleans.
+func jsonBoolean(_ value: Any) -> Bool? {
+    if let number = value as? NSNumber {
+        guard CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+        return number.boolValue
+    }
+    return value as? Bool
+}
+
 // MARK: - Encoding Extensions
 
 extension KeyedEncodingContainer where K == JSONCodingKeys {
@@ -108,7 +123,7 @@ extension KeyedEncodingContainer where K == JSONCodingKeys {
 
                 if let stringValue = value as? String {
                     try encode(stringValue, forKey: codingKey)
-                } else if let boolValue = value as? Bool {
+                } else if let boolValue = jsonBoolean(value) {
                     try encode(boolValue, forKey: codingKey)
                 } else if let intValue = value as? Int {
                     try encode(intValue, forKey: codingKey)
@@ -140,7 +155,7 @@ extension UnkeyedEncodingContainer {
         for value in array {
             if let stringValue = value as? String {
                 try encode(stringValue)
-            } else if let boolValue = value as? Bool {
+            } else if let boolValue = jsonBoolean(value) {
                 try encode(boolValue)
             } else if let intValue = value as? Int {
                 try encode(intValue)

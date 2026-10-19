@@ -14,9 +14,12 @@ struct JSONPrimitiveWrapper: Encodable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
 
-        switch value {
-        case let bool as Bool:
+        if let bool = jsonBoolean(value) {
             try container.encode(bool)
+            return
+        }
+
+        switch value {
         case let int as Int:
             try container.encode(int)
         case let int64 as Int64:
