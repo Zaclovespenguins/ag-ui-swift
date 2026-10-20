@@ -166,7 +166,8 @@ public final class AbstractAgent: Sendable {
             runId: parameters?.runId ?? "run_\(UUID().uuidString)",
             tools: parameters?.tools ?? [],
             context: parameters?.context ?? [],
-            forwardedProps: parameters?.forwardedProps ?? Data("{}".utf8)
+            forwardedProps: parameters?.forwardedProps ?? Data("{}".utf8),
+            resume: parameters?.resume
         )
     }
 

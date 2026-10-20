@@ -426,3 +426,59 @@ final class EventStreamTests: XCTestCase {
         XCTAssertEqual(events.count, 2)
     }
 }
+
+// MARK: - Malformed RUN_FINISHED
+
+final class EventStreamMalformedRunFinishedTests: XCTestCase {
+
+    private let malformed =
+        "data: {\"type\":\"RUN_FINISHED\",\"threadId\":\"t1\",\"runId\":\"r1\",\"outcome\":{\"type\":\"interrupt\",\"interrupts\":[{\"reason\":\"tool_call\"}]}}\n\n"
+
+    func testMalformedRunFinishedThrowsAfterPriorEvents() async throws {
+        let sse = "data: {\"type\":\"RUN_STARTED\",\"threadId\":\"t1\",\"runId\":\"r1\"}\n\n" + malformed
+        let stream = EventStream(bytes: MockAsyncBytes(data: Data(sse.utf8)), decoder: AGUIEventDecoder())
+
+        var events: [any AGUIEvent] = []
+        do {
+            for try await event in stream { events.append(event) }
+            XCTFail("Expected the stream to throw")
+        } catch let error as ClientError {
+            guard case .decodingError = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+        XCTAssertEqual(events.count, 1)
+        XCTAssertTrue(events[0] is RunStartedEvent)
+    }
+
+    func testOtherMalformedEventsAreStillSkipped() async throws {
+        let sse = """
+        data: {"type":"RUN_STARTED","threadId":"t1","runId":"r1"}
+
+        data: {"type":"TEXT_MESSAGE_START"}
+
+        data: {"type":"RUN_FINISHED","threadId":"t1","runId":"r1"}
+
+
+        """
+        let stream = EventStream(bytes: MockAsyncBytes(data: Data(sse.utf8)), decoder: AGUIEventDecoder())
+
+        var events: [any AGUIEvent] = []
+        for try await event in stream { events.append(event) }
+        XCTAssertEqual(events.count, 2)
+        XCTAssertTrue(events[1] is RunFinishedEvent)
+    }
+
+    func testInterruptOutcomeSurvivesTransformAndVerify() async throws {
+        let interrupt = Interrupt(id: "i1", reason: .toolCall, toolCallId: "c1")
+        let outcome = RunFinishedOutcome.interrupt([interrupt])
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            RunFinishedEvent(threadId: "t1", runId: "r1", outcome: outcome),
+        ]
+
+        var received: [any AGUIEvent] = []
+        for try await event in events.asyncStream.transformChunks().verifyEvents() {
+            received.append(event)
+        }
+        XCTAssertEqual((received.last as? RunFinishedEvent)?.outcome, outcome)
+    }
+}

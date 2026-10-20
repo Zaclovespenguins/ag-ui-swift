@@ -15,6 +15,9 @@ High-level APIs for common agent interaction patterns.
 - **StatefulAgUiAgent**: Stateful client that maintains conversation history and sends it with each request
 - **Builders**: Convenient builder patterns for agent configuration
 
+#### Interrupts (draft protocol feature)
+When a run ends with a `RUN_FINISHED` interrupt outcome, `StatefulAgUiAgent` records the interrupts for that thread. Read them with `pendingInterrupts(for:)`, then continue with `resume(threadId:entries:)`, passing one `ResumeEntry` per interrupt. Until then `sendMessage` and `chat` throw `InterruptError`, as does `resume` if the entries skip an interrupt, name an unknown one, or answer an expired one with anything but `.cancelled`. A `RUN_FINISHED` event that cannot be decoded now fails the stream with `ClientError.decodingError` instead of being skipped.
+
 ### AGUIClient
 Low-level client infrastructure and transport implementations.
 - **HttpAgent**: Low-level HTTP transport implementation

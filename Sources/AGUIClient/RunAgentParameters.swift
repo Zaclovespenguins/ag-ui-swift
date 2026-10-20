@@ -12,15 +12,20 @@ public struct RunAgentParameters: Sendable {
     public var context: [Context]?
     public var forwardedProps: State?
 
+    /// Answers to the interrupts that ended the previous run, when this run resumes from one.
+    public var resume: [ResumeEntry]?
+
     public init(
         runId: String? = nil,
         tools: [Tool]? = nil,
         context: [Context]? = nil,
-        forwardedProps: State? = nil
+        forwardedProps: State? = nil,
+        resume: [ResumeEntry]? = nil
     ) {
         self.runId = runId
         self.tools = tools
         self.context = context
         self.forwardedProps = forwardedProps
+        self.resume = resume
     }
 }

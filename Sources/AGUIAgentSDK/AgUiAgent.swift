@@ -66,11 +66,23 @@ public final class AgUiAgent: Sendable {
 
     // MARK: - sendMessage (primary API)
 
+    /// Sends a message in a new run.
+    ///
+    /// - Parameters:
+    ///   - message: The user's message text
+    ///   - threadId: The conversation thread ID (defaults to a new UUID)
+    ///   - state: State to send (defaults to an empty object)
+    ///   - includeSystemPrompt: Whether to prepend the configured system prompt
+    ///   - resume: Answers to the interrupts that ended the previous run on this
+    ///     thread, if this run continues from one. This agent keeps no history, so
+    ///     it does not check that every interrupt is answered; use
+    ///     ``StatefulAgUiAgent/resume(threadId:entries:)`` for that.
     public func sendMessage(
         _ message: String,
         threadId: String = UUID().uuidString,
         state: State? = nil,
-        includeSystemPrompt: Bool = true
+        includeSystemPrompt: Bool = true,
+        resume: [ResumeEntry]? = nil
     ) -> AsyncThrowingStream<any AGUIEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -101,7 +113,8 @@ public final class AgUiAgent: Sendable {
                         messages: messages,
                         tools: tools,
                         context: self.config.context,
-                        forwardedProps: self.config.forwardedProps
+                        forwardedProps: self.config.forwardedProps,
+                        resume: resume
                     )
 
                     let rawStream = self.run(input: input)
