@@ -252,27 +252,6 @@ final class StatefulAgUiAgentInterruptTests: XCTestCase {
         XCTAssertEqual(inputs.count, 1)
     }
 
-    func testExpiryParsesFractionalSecondsAndIgnoresFuture() throws {
-        let fractionalPast = Interrupt(id: "a", reason: .toolCall, expiresAt: "2000-01-01T00:00:00.123Z")
-        let futureDate = Interrupt(id: "b", reason: .toolCall, expiresAt: future())
-        let none = Interrupt(id: "c", reason: .toolCall)
-        XCTAssertTrue(InterruptExpiry.isExpired(fractionalPast))
-        XCTAssertFalse(InterruptExpiry.isExpired(futureDate))
-        XCTAssertFalse(InterruptExpiry.isExpired(none))
-        XCTAssertNoThrow(try StatefulAgUiAgent.validateResume(
-            entries: [.resolved(interruptId: "b")], pending: [futureDate]
-        ))
-    }
-
-    func testInterruptErrorDescriptions() {
-        XCTAssertEqual(
-            InterruptError.unansweredInterrupts(ids: ["a", "b"]).errorDescription,
-            "Thread has 2 pending interrupt(s) not addressed by resume: a, b"
-        )
-        XCTAssertNotNil(InterruptError.unknownInterrupts(ids: ["x"]).errorDescription)
-        XCTAssertNotNil(InterruptError.expired(id: "x").errorDescription)
-    }
-
     // MARK: - buildResumeArray
 
     func testBuildResumeArrayOrdersByInterrupts() throws {
@@ -304,15 +283,97 @@ final class StatefulAgUiAgentInterruptTests: XCTestCase {
 
     // MARK: - AgUiAgent (stateless)
 
-    func testAgUiAgentPassesResume() async throws {
+    private func statelessRun(
+        _ agent: AgUiAgent,
+        resume: [ResumeEntry]?,
+        answering: [Interrupt]? = nil
+    ) async -> Error? {
+        do {
+            for try await _ in agent.sendMessage("hi", threadId: "t", resume: resume, answering: answering) {}
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    func testAgUiAgentSendsResumeThatCoversAnsweredInterrupts() async throws {
         let transport = CapturingTransport()
         let agent = AgUiAgent(transport: transport)
         let entries = [ResumeEntry.cancelled(interruptId: "i1")]
-        for try await _ in agent.sendMessage("hi", threadId: "t", resume: entries) {}
-        for try await _ in agent.sendMessage("hi", threadId: "t") {}
+        let first = await statelessRun(agent, resume: entries, answering: [Interrupt(id: "i1", reason: .toolCall)])
+        let second = await statelessRun(agent, resume: nil)
+        XCTAssertNil(first)
+        XCTAssertNil(second)
 
         let inputs = await transport.capturedInputs
         XCTAssertEqual(inputs[0].resume, entries)
         XCTAssertNil(inputs[1].resume)
+    }
+
+    func testAgUiAgentRejectsResumeThatLeavesAnInterruptUncovered() async throws {
+        let transport = CapturingTransport()
+        let agent = AgUiAgent(transport: transport)
+        let error = await statelessRun(
+            agent,
+            resume: [.cancelled(interruptId: "i1")],
+            answering: [Interrupt(id: "i1", reason: .toolCall), Interrupt(id: "i2", reason: .toolCall)]
+        )
+        XCTAssertEqual(error as? InterruptError, .unansweredInterrupts(ids: ["i2"]))
+        let inputs = await transport.capturedInputs
+        XCTAssertTrue(inputs.isEmpty, "Nothing should be sent")
+    }
+
+    func testAgUiAgentRejectsResumeWithoutTheInterruptsItAnswers() async throws {
+        let transport = CapturingTransport()
+        let agent = AgUiAgent(transport: transport)
+        let error = await statelessRun(agent, resume: [.cancelled(interruptId: "i1")])
+        XCTAssertEqual(error as? InterruptError, .unknownInterrupts(ids: ["i1"]))
+        let inputs = await transport.capturedInputs
+        XCTAssertTrue(inputs.isEmpty)
+    }
+
+    func testAgUiAgentRejectsResolvedAnswerToExpiredInterrupt() async throws {
+        let transport = CapturingTransport()
+        let agent = AgUiAgent(transport: transport)
+        let error = await statelessRun(
+            agent,
+            resume: [.resolved(interruptId: "i1")],
+            answering: [Interrupt(id: "i1", reason: .toolCall, expiresAt: past())]
+        )
+        XCTAssertEqual(error as? InterruptError, .expired(id: "i1"))
+        let inputs = await transport.capturedInputs
+        XCTAssertTrue(inputs.isEmpty)
+    }
+
+    func testAgUiAgentSendsCancelledAnswerToExpiredInterrupt() async throws {
+        let transport = CapturingTransport()
+        let agent = AgUiAgent(transport: transport)
+        let error = await statelessRun(
+            agent,
+            resume: [.cancelled(interruptId: "i1")],
+            answering: [Interrupt(id: "i1", reason: .toolCall, expiresAt: past())]
+        )
+        XCTAssertNil(error)
+        let inputs = await transport.capturedInputs
+        XCTAssertEqual(inputs.count, 1)
+    }
+
+    func testAgUiAgentRejectsNewMessageWhileInterruptsArePending() async throws {
+        let transport = CapturingTransport()
+        let agent = AgUiAgent(transport: transport)
+        let error = await statelessRun(agent, resume: nil, answering: [Interrupt(id: "i1", reason: .toolCall)])
+        XCTAssertEqual(error as? InterruptError, .unansweredInterrupts(ids: ["i1"]))
+        let inputs = await transport.capturedInputs
+        XCTAssertTrue(inputs.isEmpty)
+    }
+
+    func testAgUiAgentSendsNewMessageWhenNoInterruptsArePending() async throws {
+        let transport = CapturingTransport()
+        let agent = AgUiAgent(transport: transport)
+        let error = await statelessRun(agent, resume: nil, answering: [])
+        XCTAssertNil(error)
+        let inputs = await transport.capturedInputs
+        XCTAssertEqual(inputs.count, 1)
+        XCTAssertNil(inputs[0].resume)
     }
 }

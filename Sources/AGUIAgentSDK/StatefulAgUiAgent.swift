@@ -229,7 +229,7 @@ public final class StatefulAgUiAgent: Sendable {
         entries: [ResumeEntry]
     ) async throws -> AsyncThrowingStream<any AGUIEvent, Error> {
         let pending = await interruptManager.pending(for: threadId)
-        try Self.validateResume(entries: entries, pending: pending)
+        try ResumeValidator.validate(entries: entries, pending: pending)
 
         let history = await historyManager.history(for: threadId)
         let currentState = await stateManager.currentState()
@@ -403,37 +403,6 @@ public final class StatefulAgUiAgent: Sendable {
 
         // Wrap the stream to track history and state updates
         return trackHistoryAndState(stream: eventStream, threadId: threadId)
-    }
-
-    /// Checks that `entries` answer exactly the pending interrupts, and that none that
-    /// has expired is answered with anything but `.cancelled`.
-    static func validateResume(
-        entries: [ResumeEntry],
-        pending: [Interrupt],
-        now: Date = Date()
-    ) throws {
-        let answered = Set(entries.map(\.interruptId))
-        let pendingIds = Set(pending.map(\.id))
-
-        let unanswered = pending.map(\.id).filter { !answered.contains($0) }
-        if !unanswered.isEmpty {
-            throw InterruptError.unansweredInterrupts(ids: unanswered)
-        }
-
-        var unknown: [String] = []
-        for entry in entries where !pendingIds.contains(entry.interruptId) && !unknown.contains(entry.interruptId) {
-            unknown.append(entry.interruptId)
-        }
-        if !unknown.isEmpty {
-            throw InterruptError.unknownInterrupts(ids: unknown)
-        }
-
-        for interrupt in pending where InterruptExpiry.isExpired(interrupt, now: now) {
-            let isCancelled = entries.first { $0.interruptId == interrupt.id }?.status == .cancelled
-            if !isCancelled {
-                throw InterruptError.expired(id: interrupt.id)
-            }
-        }
     }
 
     /// Wraps an event stream to track assistant messages, tool calls, state updates, and pending interrupts.

@@ -49,5 +49,5 @@ Modules, lowest to highest (see `ARCHITECTURE.md`):
 - Report what was validated and any checks that could not run.
 
 ## Known gaps
-- Interrupt/resume (draft spec): `StatefulAgUiAgent` tracks pending interrupts per thread and answers them with `resume(threadId:entries:)`; `sendMessage` throws `InterruptError` while any are pending. `AgUiAgent` only passes `resume` through and doesn't validate it.
+- Interrupt/resume (draft spec): `StatefulAgUiAgent` tracks pending interrupts per thread and answers them with `resume(threadId:entries:)`; `sendMessage` throws `InterruptError` while any are pending. `AgUiAgent.sendMessage` keeps no history, so the caller passes the interrupts being answered as `answering:` and `resume` is checked against them with `ResumeValidator` (AGUICore). `HttpAgent`, `AbstractAgent`, and `run(input:)` don't validate `resume`; the caller owns coverage there.
 - `ClientToolResponseHandler` should send the full history and a fresh `runId`, and pass the agent's reply through instead of discarding it.

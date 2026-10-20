@@ -60,6 +60,11 @@ public final class AgUiAgent: Sendable {
 
     // MARK: - Core run method
 
+    /// Runs the input as given.
+    ///
+    /// - Note: This does not validate `input.resume`; the caller owns interrupt
+    ///   coverage. Use ``sendMessage(_:threadId:state:includeSystemPrompt:resume:answering:)``
+    ///   for the checked path.
     public func run(input: RunAgentInput) -> AsyncThrowingStream<any AGUIEvent, Error> {
         transport.run(input: input)
     }
@@ -74,19 +79,31 @@ public final class AgUiAgent: Sendable {
     ///   - state: State to send (defaults to an empty object)
     ///   - includeSystemPrompt: Whether to prepend the configured system prompt
     ///   - resume: Answers to the interrupts that ended the previous run on this
-    ///     thread, if this run continues from one. This agent keeps no history, so
-    ///     it does not check that every interrupt is answered; use
-    ///     ``StatefulAgUiAgent/resume(threadId:entries:)`` for that.
+    ///     thread, if this run continues from one
+    ///   - answering: The interrupts that ended the previous run. This agent keeps no
+    ///     history, so the caller supplies them (from the `RUN_FINISHED` outcome) and
+    ///     `resume` is checked against them with ``ResumeValidator`` before anything is
+    ///     sent. Omitting them while passing `resume` fails with
+    ///     ``InterruptError/unknownInterrupts(ids:)``.
+    /// - Note: The returned stream fails with ``InterruptError`` if `resume` does not
+    ///   match `answering` (including `answering` interrupts with no `resume` at all),
+    ///   without making a request. ``run(input:)`` does no such
+    ///   check; callers that build the input themselves own coverage.
     public func sendMessage(
         _ message: String,
         threadId: String = UUID().uuidString,
         state: State? = nil,
         includeSystemPrompt: Bool = true,
-        resume: [ResumeEntry]? = nil
+        resume: [ResumeEntry]? = nil,
+        answering: [Interrupt]? = nil
     ) -> AsyncThrowingStream<any AGUIEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
+                    if resume != nil || !(answering ?? []).isEmpty {
+                        try ResumeValidator.validate(entries: resume ?? [], pending: answering ?? [])
+                    }
+
                     var messages: [any Message] = []
 
                     if includeSystemPrompt, let prompt = self.config.systemPrompt {
@@ -158,3 +175,6 @@ public final class AgUiAgent: Sendable {
         await httpAgent.dispose()
     }
 }
+
+/// The error thrown when a resume list does not match a thread's pending interrupts.
+public typealias InterruptError = AGUICore.InterruptError

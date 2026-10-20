@@ -10,7 +10,7 @@
 | Spec target | AG-UI **1.0**, frozen: `docs/spec/1.0/` in [ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui) |
 | Upstream snapshot | `main` @ `b959aa6` (2026-10-20) |
 | Draft (1.1) | `docs/spec/draft/changelog.mdx` lists no changes yet. Re-check before each release. |
-| Repo snapshot | `main` @ `20b36c0`, plus **uncommitted** work in the tree (see A8) |
+| Repo snapshot | `feature/interrupt-resume` @ `4337612`, plus uncommitted B10 work in the tree |
 | Validation at snapshot | `swift build` passes; `swift test` reports "All tests passed". Not run: `swiftlint`, iOS/macOS `xcodebuild`. |
 
 **Sources of truth, in order:** `1.0/schema.json` (structure), the normative pages under `1.0/` (behavior), then `1.0/changelog.mdx` (summary). Upstream *release notes* and the `docs.ag-ui.com/concepts/*` pages are integration changelogs and explainers, not the spec. Where they disagree with `1.0/`, `1.0/` wins. (Example: the concepts page says a partial resume yields `RunError`; the 1.0 pattern page makes coverage the *consumer's* rule.)
@@ -32,7 +32,7 @@ Verified in code unless marked. "WIP" means present in the working tree but not 
 | A5 | **Activity** snapshot and delta events and `ActivityMessage` | `Events/ActivityEvents/` |
 | A6 | **Chunk transformer, state manager and patch applicator, subscribers, tool registry/executor, circuit breaker, SSE parser/transport** | Kotlin-parity work, now on `main` |
 | A7 | **Basic stream verifier**: first event, run lifecycle, balanced messages/tool calls/steps, multi-run reset | `EventVerifier.swift` (gaps in B8) |
-| A8 | **WIP: SDK interrupt flow.** `StatefulAgUiAgent` tracks pending interrupts per thread, `resume(threadId:entries:)`, `InterruptError` (unknown ids, expired interrupts answered with anything but `.cancelled`), `sendMessage` throws while any are pending; `resume` passthrough in `AbstractAgent`/`RunAgentParameters`/`EventStream`. **Needs review and a commit** before it counts as done. | `git status`; tests in `StatefulAgUiAgentInterruptTests`, `RunAgentParametersResumeTests` |
+| A8 | **SDK interrupt flow.** `StatefulAgUiAgent` tracks pending interrupts per thread, `resume(threadId:entries:)`, `InterruptError` (unknown ids, expired interrupts answered with anything but `.cancelled`), `sendMessage` throws while any are pending; `resume` passthrough in `AbstractAgent`/`RunAgentParameters`/`EventStream`. Committed in `205d780`. | `git status`; tests in `StatefulAgUiAgentInterruptTests`, `RunAgentParametersResumeTests` |
 
 ---
 
@@ -90,10 +90,11 @@ Read from `EventVerifier.swift`; each needs a failing test first *(verify)*:
 ### B9. Activity messages must not be sent back (P1)
 `basic/run-input`: a consumer **MUST** strip activity messages from `messages` before sending. `MessageEncoder` encodes them and the SDK/client never strips (no activity handling found in `AGUIAgentSDK`/`AGUIClient`). Fix in the input-building path (`RunAgentInputBuilder` / history manager) so every send path is covered. Tests: history with an activity message sends none.
 
-### B10. Resume coverage on the non-stateful path (P1)
-`basic/patterns/interrupt-resume`: a consumer **MUST** reject, before sending, a resume list that leaves an interrupt uncovered or resolves an expired one; omission is not abandonment. A8 enforces this in `StatefulAgUiAgent` only. `AgUiAgent` passes `resume` through unvalidated (AGENTS.md known gap), and `HttpAgent`/`AbstractAgent` callers can bypass it.
-- **Decision:** put the coverage check at the lowest layer that holds the interrupts (agent-level state), or document that stateless callers own it.
-- Also: a producer-side mismatch (unrecognized entry id) is a warning, not a failure; after `.cancelled` the next run is a normal new run, not a resume.
+### B10. Resume coverage on the non-stateful path (P1, done for send paths)
+`basic/patterns/interrupt-resume`: a consumer **MUST** reject, before sending, a resume list that leaves an interrupt uncovered or resolves an expired one; omission is not abandonment.
+- **Decided:** the check is `ResumeValidator.validate(entries:pending:now:)` in AGUICore (with `InterruptError`), used by `StatefulAgUiAgent.resume` and by `AgUiAgent.sendMessage(_:resume:answering:)`. No lower layer tracks interrupts (`AbstractAgent` keeps messages and state but not run outcomes, and hardcodes `threadId`), so the stateless caller supplies `answering:`. Passing `resume` without it fails as unknown ids.
+- `HttpAgent`, `AbstractAgent.runAgent(parameters:)`, and `run(input:)` do not validate; the caller owns coverage. Revisit if `AbstractAgent` ever tracks outcomes.
+- Still open: a producer-side mismatch (unrecognized entry id) is a warning, not a failure, per the spec; we throw for unknown ids on the consumer side. After `.cancelled` the next run is a normal new run, not a resume.
 
 ### B11. Cancelled outcome surface (P2)
 `events/lifecycle#cancelled-runs`: a consumer **MUST NOT** present a cancelled run as success **or** as an error. Audit `AgentSubscriber`, `StateManager`, `ChatAgent`/view-model, and `ConversationHistoryManager` for code that treats any non-error `RUN_FINISHED` as success. A consumer abandoning a stream **MUST NOT** synthesize a `RUN_FINISHED`.
@@ -162,11 +163,11 @@ Every phase is test-first on a feature branch from an up-to-date `main`, with `s
 
 | Phase | Contents | Why this order |
 |---|---|---|
-| **0. Baseline** | Commit or park the A8 WIP; C8 harness; B12 schema diff. Output: a list of confirmed divergences replacing every *(verify)* above. | Everything else is judged against it. |
+| **0. Baseline** | C8 harness; B12 schema diff. Output: a list of confirmed divergences replacing every *(verify)* above. | Everything else is judged against it. |
 | **1. Wire safety (P0)** | B1 + C7 (pipeline and warnings), C2 (`protocolVersion`), B3 (content parts), B5, B6, B7 | These make the client talk to and survive a 1.0 producer. B3 is the breaking one. |
 | **2. Subagents** | C1 (events, attribution, verifier rules, subscriber) | Large, but isolated; needs B8's verifier restructure first. |
 | **3. Verifier and lifecycle** | B8 (late `RUN_ERROR`, error recovery, reasoning, chunk rules), B11 | Uses the Phase 0 failing tests. |
-| **4. SDK flows** | A8 landing, B9, B10, C5, B2 resolution | Application-facing behavior. |
+| **4. SDK flows** | B9, C5, B2 resolution | Application-facing behavior. |
 | **5. Additive fields** | B4 (tool result parts), C3 (usage), C4 (metadata), C6 (capabilities types) | Safe additions; no one is blocked on them. |
 | **6. Optional** | C9 (protobuf), B13 extras | Deferred. |
 
@@ -175,7 +176,7 @@ Every phase is test-first on a feature branch from an up-to-date `main`, with `s
 1. **B1:** change the default for unknown events, or keep `.throwError` opt-in and force the SDK layer to tolerate?
 2. **B2:** follow the spec (strip unknown outcomes to absent, warn) or keep `.unknown(type:)` as a recorded deviation? Legacy string outcomes: fatal or unknown?
 3. **B3:** accept a breaking release for the content-part wire change?
-4. **B10:** where does resume coverage live (agent-level state, or the caller)?
+4. ~~**B10:** where does resume coverage live?~~ Resolved: `ResumeValidator` in AGUICore; `AgUiAgent` takes `answering:` (see B10).
 5. **C7:** warning mechanism (callback/stream on config, or add a logger as its own decision).
 6. **C8:** schema validation via script and CI, or an in-test checker.
 7. **C1:** shape of the subagent observation API.
