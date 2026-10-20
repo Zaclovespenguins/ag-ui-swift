@@ -4,6 +4,11 @@ import Foundation
 
 /// Represents binary data (images, audio, documents) in multimodal user input.
 ///
+/// - Important: `binary` is retired in AG-UI 1.0 and is never sent. It is still accepted
+///   as input: decoding translates it to an ``ImagePart``, ``AudioPart``, ``VideoPart`` or
+///   ``DocumentPart`` (chosen by MIME type), and encoding sends that translation. Prefer the
+///   1.0 parts in new code.
+///
 /// `BinaryInputContent` enables users to include rich media in their messages,
 /// supporting images, audio, video, documents, and other binary formats. Binary
 /// content can be provided via URL, identifier, or embedded base64-encoded data.
@@ -72,6 +77,9 @@ public struct BinaryInputContent: InputContent {
     /// Provides context about the content and can be used when saving
     /// or displaying the file.
     public let filename: String?
+
+    /// Always `nil`; the retired `binary` part carries no metadata.
+    public var metadata: Data? { nil }
 
     /// Creates a new binary content instance.
     ///

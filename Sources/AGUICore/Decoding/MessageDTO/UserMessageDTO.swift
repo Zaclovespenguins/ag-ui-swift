@@ -7,7 +7,7 @@ struct UserMessageDTO {
     let id: String
     let content: String
     let name: String?
-    let contentParts: [any InputContent]?
+    let contentParts: [any ContentPart]?
     let encryptedValue: String?
 
     static func decode(from data: Data, decoder: JSONDecoder = JSONDecoder()) throws -> UserMessageDTO {
@@ -37,7 +37,7 @@ struct UserMessageDTO {
         }
 
         let content: String
-        let contentParts: [any InputContent]?
+        let contentParts: [any ContentPart]?
 
         if let contentString = contentValue as? String {
             // Text-only message
@@ -60,56 +60,15 @@ struct UserMessageDTO {
         return UserMessageDTO(id: id, content: content, name: name, contentParts: contentParts, encryptedValue: encryptedValue)
     }
 
-    /// Decodes an array of InputContent from JSON dictionaries using DTOs.
+    /// Decodes an array of content parts. Parts this package cannot use are dropped rather than
+    /// failing the message; the warnings are discarded until a warning channel exists (plan C7).
     private static func decodeInputContentArray(
         _ array: [[String: Any]],
         decoder: JSONDecoder
-    ) throws -> [any InputContent] {
-        var result: [any InputContent] = []
-
-        for (index, item) in array.enumerated() {
-            guard let type = item["type"] as? String else {
-                throw DecodingError.keyNotFound(
-                    CodingKeys.type,
-                    DecodingError.Context(
-                        codingPath: [ArrayIndex(index: index)],
-                        debugDescription: "Missing type field in content array item"
-                    )
-                )
-            }
-
-            let itemData = try JSONSerialization.data(withJSONObject: item)
-
-            switch type {
-            case "text":
-                let dto = try TextInputContentDTO.decode(from: itemData, decoder: decoder)
-                result.append(dto.toDomain())
-            case "binary":
-                let dto = try BinaryInputContentDTO.decode(from: itemData, decoder: decoder)
-                result.append(try dto.toDomain())
-            case "image":
-                let dto = try ImageInputContentDTO.decode(from: itemData, decoder: decoder)
-                result.append(dto.toDomain())
-            case "audio":
-                let dto = try AudioInputContentDTO.decode(from: itemData, decoder: decoder)
-                result.append(dto.toDomain())
-            case "video":
-                let dto = try VideoInputContentDTO.decode(from: itemData, decoder: decoder)
-                result.append(dto.toDomain())
-            case "document":
-                let dto = try DocumentInputContentDTO.decode(from: itemData, decoder: decoder)
-                result.append(dto.toDomain())
-            default:
-                throw DecodingError.dataCorrupted(
-                    DecodingError.Context(
-                        codingPath: [ArrayIndex(index: index), CodingKeys.type],
-                        debugDescription: "Unknown InputContent type: \(type)"
-                    )
-                )
-            }
+    ) throws -> [any ContentPart] {
+        try array.enumerated().compactMap { index, item in
+            try ContentPartCodec.decode(item, index: index).part
         }
-
-        return result
     }
 
     func toDomain() -> UserMessage {
@@ -122,25 +81,5 @@ struct UserMessageDTO {
 
     private enum CodingKeys: String, CodingKey {
         case content
-        case type
-    }
-
-    private struct ArrayIndex: CodingKey {
-        var intValue: Int?
-        var stringValue: String
-
-        init(index: Int) {
-            self.intValue = index
-            self.stringValue = "Index \(index)"
-        }
-
-        init?(intValue: Int) {
-            self.intValue = intValue
-            self.stringValue = "Index \(intValue)"
-        }
-
-        init?(stringValue: String) {
-            nil
-        }
     }
 }
