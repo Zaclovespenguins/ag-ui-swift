@@ -26,8 +26,8 @@ public struct UserMessage: Message, Sendable, Hashable {
     /// The multimodal content parts.
     ///
     /// This is `nil` for text-only messages and contains the array of
-    /// InputContent for multimodal messages.
-    public let contentParts: [any InputContent]?
+    /// Content parts for multimodal messages.
+    public let contentParts: [any ContentPart]?
 
     /// Optional encrypted value associated with this message.
     ///
@@ -67,13 +67,13 @@ public struct UserMessage: Message, Sendable, Hashable {
     ///
     /// - Parameters:
     ///   - id: Unique identifier for the message
-    ///   - parts: Array of InputContent (text and/or binary)
+    ///   - parts: Array of content parts
     ///   - name: Optional name of the user
     ///   - encryptedValue: Optional encrypted reasoning value
     /// - Returns: A multimodal UserMessage
     public static func multimodal(
         id: String,
-        parts: [any InputContent],
+        parts: [any ContentPart],
         name: String? = nil,
         encryptedValue: String? = nil
     ) -> UserMessage {
@@ -93,7 +93,7 @@ public struct UserMessage: Message, Sendable, Hashable {
         role: Role,
         content: String,
         name: String?,
-        contentParts: [any InputContent]?,
+        contentParts: [any ContentPart]?,
         encryptedValue: String? = nil
     ) {
         self.id = id
