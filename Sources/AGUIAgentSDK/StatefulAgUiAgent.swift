@@ -27,6 +27,9 @@ public final class StatefulAgUiAgent: Sendable {
     /// Actor for managing current state (thread-safe).
     private let stateManager: StateManager
 
+    /// Interrupts from each thread's most recent run, awaiting a resume.
+    private let interruptManager = InterruptManager()
+
     /// Optional tool execution manager. Created when `config.toolRegistry` is set.
     private let toolExecutionManager: ToolExecutionManager?
 
@@ -135,7 +138,9 @@ public final class StatefulAgUiAgent: Sendable {
     ///   - state: Custom state to send (defaults to current state)
     ///   - includeSystemPrompt: Whether to add system prompt for new threads (default: true)
     /// - Returns: Event stream from the agent
-    /// - Throws: `ClientError` if the request fails
+    /// - Throws: ``InterruptError/unansweredInterrupts(ids:)`` if the thread has pending
+    ///   interrupts (answer them with ``resume(threadId:entries:)`` first), or
+    ///   `ClientError` if the request fails
     ///
     /// ## Example
     ///
@@ -154,6 +159,12 @@ public final class StatefulAgUiAgent: Sendable {
         state: State?,
         includeSystemPrompt: Bool
     ) async throws -> AsyncThrowingStream<any AGUIEvent, Error> {
+        // A thread paused on an interrupt can only continue through resume(threadId:entries:).
+        let pending = await interruptManager.pending(for: threadId)
+        if !pending.isEmpty {
+            throw InterruptError.unansweredInterrupts(ids: pending.map(\.id))
+        }
+
         // Get conversation history for this thread
         var history = await historyManager.history(for: threadId)
 
@@ -189,13 +200,140 @@ public final class StatefulAgUiAgent: Sendable {
             stateToUse = await stateManager.currentState()
         }
 
+        return try await startRun(threadId: threadId, history: history, state: stateToUse, resume: nil)
+    }
+
+    /// Continues a thread that paused on an interrupt.
+    ///
+    /// Starts a new run on the same thread with a fresh run ID, the existing history
+    /// (no user message is added), the current state, tools, and context, plus `entries`
+    /// as the run's `resume` field. Nothing is sent if validation fails.
+    ///
+    /// - Parameters:
+    ///   - threadId: The thread whose interrupts are being answered
+    ///   - entries: One entry per pending interrupt
+    /// - Returns: Event stream from the agent
+    /// - Throws: ``InterruptError`` if `entries` leave a pending interrupt unanswered,
+    ///   name an interrupt that is not pending, or answer an expired interrupt with
+    ///   anything but `.cancelled`; `ClientError` if the request fails
+    ///
+    /// ## Example
+    ///
+    /// ```swift
+    /// let pending = await agent.pendingInterrupts(for: "chat-1")
+    /// let entries = pending.map { ResumeEntry.resolved(interruptId: $0.id, payload: Data("{\"approved\":true}".utf8)) }
+    /// let stream = try await agent.resume(threadId: "chat-1", entries: entries)
+    /// ```
+    public func resume(
+        threadId: String,
+        entries: [ResumeEntry]
+    ) async throws -> AsyncThrowingStream<any AGUIEvent, Error> {
+        let pending = await interruptManager.pending(for: threadId)
+        try ResumeValidator.validate(entries: entries, pending: pending)
+
+        let history = await historyManager.history(for: threadId)
+        let currentState = await stateManager.currentState()
+        return try await startRun(threadId: threadId, history: history, state: currentState, resume: entries)
+    }
+
+    /// The interrupts that ended a thread's most recent run and are still awaiting an answer.
+    ///
+    /// - Parameter threadId: The thread ID
+    /// - Returns: The pending interrupts, or an empty array if the last run did not pause
+    public func pendingInterrupts(for threadId: String) async -> [Interrupt] {
+        await interruptManager.pending(for: threadId)
+    }
+
+    /// Builds a `resume` array with one entry per interrupt, in interrupt order.
+    ///
+    /// Mirrors `buildResumeArray` in the TypeScript SDK.
+    ///
+    /// - Parameters:
+    ///   - interrupts: The interrupts to answer
+    ///   - responses: The response for each interrupt, keyed by interrupt ID
+    /// - Returns: The resume entries
+    /// - Throws: ``InterruptError/unansweredInterrupts(ids:)`` if an interrupt has no
+    ///   response, or ``InterruptError/unknownInterrupts(ids:)`` if a response names
+    ///   an interrupt that is not in `interrupts`
+    public static func buildResumeArray(
+        interrupts: [Interrupt],
+        responses: [String: ResumeEntry]
+    ) throws -> [ResumeEntry] {
+        let ids = Set(interrupts.map(\.id))
+        let missing = interrupts.map(\.id).filter { responses[$0] == nil }
+        if !missing.isEmpty {
+            throw InterruptError.unansweredInterrupts(ids: missing)
+        }
+        let unknown = responses.keys.filter { !ids.contains($0) }.sorted()
+        if !unknown.isEmpty {
+            throw InterruptError.unknownInterrupts(ids: unknown)
+        }
+        return interrupts.compactMap { interrupt in
+            responses[interrupt.id].map {
+                ResumeEntry(
+                    interruptId: interrupt.id,
+                    status: $0.status,
+                    payload: $0.status == .resolved ? $0.payload : nil,
+                    metadata: $0.metadata
+                )
+            }
+        }
+    }
+
+    /// Retrieves the conversation history for a thread.
+    ///
+    /// - Parameter threadId: The thread ID (default: "default")
+    /// - Returns: Array of messages in chronological order
+    ///
+    /// ## Example
+    ///
+    /// ```swift
+    /// let history = await agent.history(for: "chat-session")
+    /// print("Conversation has \(history.count) messages")
+    /// ```
+    public func history(for threadId: String = "default") async -> [any Message] {
+        await historyManager.history(for: threadId)
+    }
+
+    /// Clears conversation history, and any pending interrupts, for one or all threads.
+    ///
+    /// - Parameter threadId: The thread ID to clear, or `nil` to clear all threads
+    ///
+    /// ## Example
+    ///
+    /// ```swift
+    /// // Clear specific thread
+    /// await agent.clearHistory(threadId: "chat-1")
+    ///
+    /// // Clear all threads
+    /// await agent.clearHistory()
+    /// ```
+    public func clearHistory(threadId: String? = nil) async {
+        await historyManager.clear(threadId: threadId)
+        await interruptManager.clear(threadId: threadId)
+    }
+
+    // MARK: - Private Helpers
+
+    /// Builds the run input, starts the run, and wraps the stream with tool execution
+    /// and history and state tracking. Shared by ``sendMessage(message:threadId:state:includeSystemPrompt:)``
+    /// and ``resume(threadId:entries:)``.
+    private func startRun(
+        threadId: String,
+        history: [any Message],
+        state stateToUse: State,
+        resume: [ResumeEntry]?
+    ) async throws -> AsyncThrowingStream<any AGUIEvent, Error> {
         // Build the base run input
-        let baseInput = try RunAgentInput.builder()
+        var builder = RunAgentInput.builder()
             .threadId(threadId)
             .runId("run_\(UUID().uuidString)")
             .messages(history)
             .state(stateToUse)
-            .build()
+        if let resume {
+            builder = builder.resume(resume)
+        }
+        let baseInput = try builder.build()
 
         // Include tool definitions if a registry is configured
         let inputWithTools: RunAgentInput
@@ -209,7 +347,8 @@ public final class StatefulAgUiAgent: Sendable {
                 messages: baseInput.messages,
                 tools: tools,
                 context: config.context.isEmpty ? baseInput.context : config.context,
-                forwardedProps: baseInput.forwardedProps
+                forwardedProps: baseInput.forwardedProps,
+                resume: baseInput.resume
             )
         } else {
             inputWithTools = RunAgentInput(
@@ -220,7 +359,8 @@ public final class StatefulAgUiAgent: Sendable {
                 messages: baseInput.messages,
                 tools: baseInput.tools,
                 context: config.context.isEmpty ? baseInput.context : config.context,
-                forwardedProps: baseInput.forwardedProps
+                forwardedProps: baseInput.forwardedProps,
+                resume: baseInput.resume
             )
         }
 
@@ -265,41 +405,7 @@ public final class StatefulAgUiAgent: Sendable {
         return trackHistoryAndState(stream: eventStream, threadId: threadId)
     }
 
-    /// Retrieves the conversation history for a thread.
-    ///
-    /// - Parameter threadId: The thread ID (default: "default")
-    /// - Returns: Array of messages in chronological order
-    ///
-    /// ## Example
-    ///
-    /// ```swift
-    /// let history = await agent.history(for: "chat-session")
-    /// print("Conversation has \(history.count) messages")
-    /// ```
-    public func history(for threadId: String = "default") async -> [any Message] {
-        await historyManager.history(for: threadId)
-    }
-
-    /// Clears conversation history for one or all threads.
-    ///
-    /// - Parameter threadId: The thread ID to clear, or `nil` to clear all threads
-    ///
-    /// ## Example
-    ///
-    /// ```swift
-    /// // Clear specific thread
-    /// await agent.clearHistory(threadId: "chat-1")
-    ///
-    /// // Clear all threads
-    /// await agent.clearHistory()
-    /// ```
-    public func clearHistory(threadId: String? = nil) async {
-        await historyManager.clear(threadId: threadId)
-    }
-
-    // MARK: - Private Helpers
-
-    /// Wraps an event stream to track assistant messages, tool calls, and state updates.
+    /// Wraps an event stream to track assistant messages, tool calls, state updates, and pending interrupts.
     private func trackHistoryAndState<S: AsyncSequence>(
         stream: S,
         threadId: String
@@ -412,6 +518,12 @@ public final class StatefulAgUiAgent: Sendable {
                             )
                             await self.historyManager.append(message: toolMessage, to: threadId)
 
+                        // MARK: Run lifecycle
+
+                        case let finished as RunFinishedEvent:
+                            // An interrupt outcome pauses the thread; any other outcome clears it.
+                            await self.interruptManager.set(finished.outcome.interrupts, for: threadId)
+
                         // MARK: State events
 
                         case let snapshot as StateSnapshotEvent:
@@ -466,5 +578,28 @@ private actor StateManager {
 
     func updateState(_ newState: State) {
         currentStateValue = newState
+    }
+}
+
+// MARK: - InterruptManager
+
+/// Thread-safe actor for tracking each thread's pending interrupts.
+private actor InterruptManager {
+    private var interruptsByThread: [String: [Interrupt]] = [:]
+
+    func pending(for threadId: String) -> [Interrupt] {
+        interruptsByThread[threadId] ?? []
+    }
+
+    func set(_ interrupts: [Interrupt], for threadId: String) {
+        interruptsByThread[threadId] = interrupts.isEmpty ? nil : interrupts
+    }
+
+    func clear(threadId: String?) {
+        if let threadId {
+            interruptsByThread[threadId] = nil
+        } else {
+            interruptsByThread.removeAll()
+        }
     }
 }

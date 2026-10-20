@@ -91,6 +91,9 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
         /// Buffer for accumulating UTF-8 bytes.
         private var utf8Buffer: [UInt8] = []
 
+        /// A fatal decoding error held back until the events decoded before it have been returned.
+        private var pendingError: (any Error)?
+
         /// Shared reference that is updated with the most recent SSE `id:` value.
         private let lastEventIdBox: LastEventIdBox
 
@@ -106,6 +109,12 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
             self.lastEventIdBox = lastEventIdBox
         }
 
+        /// Whether the raw event data has `"type": "RUN_FINISHED"`.
+        private static func isRunFinished(_ data: Data) -> Bool {
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+            return object["type"] as? String == EventType.runFinished.rawValue
+        }
+
         /// Returns the next AG-UI event from the stream.
         ///
         /// This method:
@@ -116,7 +125,8 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
         /// 5. Returns the next available event
         ///
         /// - Returns: Next event, or nil when stream ends
-        /// - Throws: Network errors or critical decoding failures
+        /// - Throws: Network errors, or `ClientError.decodingError` when a `RUN_FINISHED`
+        ///   event cannot be decoded. Other undecodable events are skipped.
         public mutating func next() async throws -> (any AGUIEvent)? {
             // Return queued events first.
             // Yield before returning a buffered event so callers on the main actor
@@ -127,6 +137,11 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
             guard eventQueue.isEmpty else {
                 await Task.yield()
                 return eventQueue.removeFirst()
+            }
+
+            if let error = pendingError {
+                pendingError = nil
+                throw error
             }
 
             // Read and process bytes until we have events
@@ -159,6 +174,15 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
                             let event = try decoder.decode(data)
                             eventQueue.append(event)
                         } catch {
+                            // A RUN_FINISHED that fails to decode (for example, a malformed
+                            // interrupt outcome) must not be skipped: the run would end with
+                            // neither a terminal event nor an error. Fail the stream instead,
+                            // after returning the events decoded before it.
+                            if Self.isRunFinished(data) {
+                                pendingError = ClientError.decodingError(error)
+                                break
+                            }
+
                             // Non-fatal decoding errors are silently ignored
                             // The stream continues processing subsequent events
                             // Applications can implement custom error handling if needed
@@ -171,6 +195,11 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
                     // Return first decoded event if available
                     guard eventQueue.isEmpty else {
                         return eventQueue.removeFirst()
+                    }
+
+                    if let error = pendingError {
+                        pendingError = nil
+                        throw error
                     }
                 } else if utf8Buffer.count > 4 {
                     // Invalid UTF-8 sequence (UTF-8 characters are max 4 bytes)
