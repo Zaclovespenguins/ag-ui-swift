@@ -66,6 +66,12 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
     /// - Note: Interrupts are a draft extension of the AG-UI protocol.
     public let resume: [ResumeEntry]?
 
+    /// The AG-UI protocol version the sender speaks, in `MAJOR.MINOR` form (for example `"1.0"`).
+    ///
+    /// `nil` omits the field on the wire. Version negotiation and comparison are not
+    /// performed here.
+    public let protocolVersion: String?
+
     /// Creates a new agent input.
     ///
     /// - Parameters:
@@ -78,6 +84,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
     ///   - context: Context items (defaults to empty)
     ///   - forwardedProps: Custom properties as JSON (defaults to empty object)
     ///   - resume: Answers to a previous run's interrupts (defaults to `nil`)
+    ///   - protocolVersion: Protocol version sent to the agent (defaults to `nil`, omitted)
     public init(
         threadId: String,
         runId: String,
@@ -87,7 +94,8 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         tools: [Tool] = [],
         context: [Context] = [],
         forwardedProps: Data = Data("{}".utf8),
-        resume: [ResumeEntry]? = nil
+        resume: [ResumeEntry]? = nil,
+        protocolVersion: String? = nil
     ) {
         self.threadId = threadId
         self.runId = runId
@@ -98,6 +106,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         self.context = context
         self.forwardedProps = forwardedProps
         self.resume = resume
+        self.protocolVersion = protocolVersion
     }
 
     // MARK: - Codable
@@ -112,6 +121,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         case context
         case forwardedProps
         case resume
+        case protocolVersion
     }
 
     public init(from decoder: Decoder) throws {
@@ -123,8 +133,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         parentRunId = try container.decodeIfPresent(String.self, forKey: .parentRunId)
 
         // Decode state as arbitrary JSON object and convert to Data.
-        // The encoder writes `null` when state is an empty `{}` object, so treat
-        // an explicit null here as equivalent to "no state" (empty object).
+        // Absent, `null`, and `{}` all mean "no state" (empty object).
         if container.contains(.state), !(try container.decodeNil(forKey: .state)) {
             let stateContainer = try container.nestedContainer(keyedBy: JSONCodingKeys.self, forKey: .state)
             let stateObject = try stateContainer.decodeJSONObject()
@@ -134,7 +143,8 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         }
 
         // Decode messages array using MessageDecoder for polymorphic deserialization
-        if container.contains(.messages) {
+        // A `null` messages value is read as omitted.
+        if container.contains(.messages), !(try container.decodeNil(forKey: .messages)) {
             var messagesContainer = try container.nestedUnkeyedContainer(forKey: .messages)
             let messagesArray = try messagesContainer.decodeJSONArray()
 
@@ -152,7 +162,8 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         context = try container.decodeIfPresent([Context].self, forKey: .context) ?? []
 
         // Decode forwardedProps as arbitrary JSON object and convert to Data
-        if container.contains(.forwardedProps) {
+        // A whole `null` is read as omitted; `null` values inside the object are data.
+        if container.contains(.forwardedProps), !(try container.decodeNil(forKey: .forwardedProps)) {
             let propsContainer = try container.nestedContainer(keyedBy: JSONCodingKeys.self, forKey: .forwardedProps)
             let propsObject = try propsContainer.decodeJSONObject()
             forwardedProps = try JSONSerialization.data(withJSONObject: propsObject)
@@ -161,6 +172,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         }
 
         resume = try container.decodeIfPresent([ResumeEntry].self, forKey: .resume)
+        protocolVersion = try container.decodeIfPresent(String.self, forKey: .protocolVersion)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -171,13 +183,13 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         try container.encode(runId, forKey: .runId)
         try container.encodeIfPresent(parentRunId, forKey: .parentRunId)
 
-        // Encode state: send null when empty so backends treat it as "no state".
-        // An empty {} object causes some adapters (e.g. claude-agent-sdk) to
-        // spin up unnecessary state-management infrastructure. null is the
-        // correct sentinel for "caller has no state to manage."
+        // Encode state: omit it when empty ("absent means absent"; never send
+        // `null`). An empty {} object causes some adapters (e.g. claude-agent-sdk)
+        // to spin up unnecessary state-management infrastructure, and consumers
+        // read an absent state as {}.
         let stateObject = try JSONSerialization.jsonObject(with: state)
         if let stateDict = stateObject as? [String: Any], stateDict.isEmpty {
-            try container.encodeNil(forKey: .state)
+            // omitted
         } else {
             var stateContainer = container.nestedContainer(keyedBy: JSONCodingKeys.self, forKey: .state)
             try stateContainer.encodeJSONObject(stateObject)
@@ -195,8 +207,9 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         try messagesContainer.encodeJSONArray(messagesArray)
 
         // Encode tools and context arrays (these already conform to Codable)
-        try container.encode(tools, forKey: .tools)
-        try container.encode(context, forKey: .context)
+        // Empty tools/context are omitted: the schema treats both as optional.
+        if !tools.isEmpty { try container.encode(tools, forKey: .tools) }
+        if !context.isEmpty { try container.encode(context, forKey: .context) }
 
         // Encode forwardedProps as arbitrary JSON object
         let propsObject = try JSONSerialization.jsonObject(with: forwardedProps)
@@ -206,6 +219,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         // Omit resume entirely when unset: the reference schema treats it as
         // optional and rejects an explicit null.
         try container.encodeIfPresent(resume, forKey: .resume)
+        try container.encodeIfPresent(protocolVersion, forKey: .protocolVersion)
     }
 
     // MARK: - Hashable
@@ -219,6 +233,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         hasher.combine(context)
         hasher.combine(forwardedProps)
         hasher.combine(resume)
+        hasher.combine(protocolVersion)
 
         // Hash each message's identifying properties
         for message in messages {
@@ -238,6 +253,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
               lhs.context == rhs.context &&
               lhs.forwardedProps == rhs.forwardedProps &&
               lhs.resume == rhs.resume &&
+              lhs.protocolVersion == rhs.protocolVersion &&
               lhs.messages.count == rhs.messages.count else {
             return false
         }
