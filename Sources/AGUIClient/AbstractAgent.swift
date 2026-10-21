@@ -25,6 +25,20 @@ internal extension AgentStorage {
     func setDisposed(_ disposed: Bool) { self.isDisposed = disposed }
 }
 
+// MARK: - RunOutcomeRecorder
+
+/// Remembers the outcome of the `RUN_FINISHED` event a run delivered, so the
+/// pipeline can tell a cancelled run from a completed one.
+private actor RunOutcomeRecorder {
+    private(set) var outcome: RunFinishedOutcome?
+
+    func observe(_ event: any AGUIEvent) {
+        if let finished = event as? RunFinishedEvent {
+            outcome = finished.outcome
+        }
+    }
+}
+
 // MARK: - AbstractAgent
 
 public final class AbstractAgent: Sendable {
@@ -95,9 +109,14 @@ public final class AbstractAgent: Sendable {
         let task = Task<Void, Error> {
             do {
                 let eventStream = self.run(input: input)
+                let recorder = RunOutcomeRecorder()
                 let processedStream = eventStream
                     .transformChunks()
                     .verifyEvents(debug: self.debug)
+                    .map { (event: any AGUIEvent) -> any AGUIEvent in
+                        await recorder.observe(event)
+                        return event
+                    }
                     .applyEvents(input: input, subscribers: allSubscribers)
 
                 for try await agentState in processedStream {
@@ -106,14 +125,34 @@ public final class AbstractAgent: Sendable {
 
                 let finalMessages = await self.storage.messages
                 let finalState = await self.storage.currentState
+                // A cancelled run (a `.cancelled` RUN_FINISHED, or a local abort) is
+                // neither a success nor an error: report it on its own hook.
+                let wasCancelled = await recorder.outcome == .cancelled || Task.isCancelled
                 _ = await runSubscribersWithMutation(
                     subscribers: allSubscribers,
                     messages: finalMessages,
                     state: finalState
                 ) { sub, msgs, st in
                     let params = AgentSubscriberParams(messages: msgs, state: st, input: input)
+                    if wasCancelled {
+                        return await sub.onRunCancelled(params: params)
+                    }
                     return await sub.onRunFinalized(params: params)
                 }
+            } catch is CancellationError {
+                // Cancelled locally: not an error. Subscribers hear onRunCancelled;
+                // the error still propagates to the caller of runAgent.
+                let currentMsgs = await self.storage.messages
+                let currentSt = await self.storage.currentState
+                _ = await runSubscribersWithMutation(
+                    subscribers: allSubscribers,
+                    messages: currentMsgs,
+                    state: currentSt
+                ) { sub, msgs, st in
+                    let params = AgentSubscriberParams(messages: msgs, state: st, input: input)
+                    return await sub.onRunCancelled(params: params)
+                }
+                throw CancellationError()
             } catch {
                 let currentMsgs = await self.storage.messages
                 let currentSt = await self.storage.currentState

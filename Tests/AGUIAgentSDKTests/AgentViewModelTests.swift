@@ -36,6 +36,27 @@ final class AgentViewModelTests: XCTestCase {
         XCTAssertEqual(sut.threadId, "test-thread")
     }
 
+    // MARK: - B11 cancelled runs
+
+    func testCancelledRunIsNeitherErrorNorSuccessFlag() async {
+        mock.eventsToYield = [
+            RunStartedEvent(threadId: "t", runId: "r"),
+            RunFinishedEvent(threadId: "t", runId: "r", outcome: .cancelled),
+        ]
+        await sut.send("hi")
+        XCTAssertTrue(sut.lastRunWasCancelled)
+        XCTAssertNil(sut.lastError)
+        XCTAssertFalse(sut.isRunning)
+    }
+
+    func testCancelledFlagResetsOnNextSend() async {
+        mock.eventsToYield = [RunFinishedEvent(threadId: "t", runId: "r", outcome: .cancelled)]
+        await sut.send("a")
+        mock.eventsToYield = [RunFinishedEvent(threadId: "t", runId: "r2")]
+        await sut.send("b")
+        XCTAssertFalse(sut.lastRunWasCancelled)
+    }
+
     // MARK: - send() — user message
 
     func testSend_appendsUserMessageImmediately() async {

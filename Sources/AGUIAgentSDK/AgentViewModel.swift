@@ -39,6 +39,13 @@ public final class AgentViewModel {
     /// Set to `nil` automatically at the start of each `send()` call.
     public private(set) var lastError: Error? = nil
 
+    /// `true` if the most recent run ended with a cancelled outcome.
+    ///
+    /// A cancelled run is neither a success nor an error, so it leaves
+    /// ``lastError`` as `nil`. Check this flag to show a "cancelled" state
+    /// instead of a success or failure state. Reset at the start of each `send()`.
+    public private(set) var lastRunWasCancelled: Bool = false
+
     // MARK: - Configuration
 
     /// The conversation thread identifier passed to the underlying agent.
@@ -72,6 +79,7 @@ public final class AgentViewModel {
         guard !isRunning else { return }
         isRunning = true
         lastError = nil
+        lastRunWasCancelled = false
 
         messages.append(AgentMessage(role: .user, content: text))
 
@@ -95,6 +103,9 @@ public final class AgentViewModel {
                         role: .assistant,
                         content: current.content + e.delta
                     )
+
+                case let e as RunFinishedEvent:
+                    if e.outcome == .cancelled { lastRunWasCancelled = true }
 
                 case let e as RunErrorEvent:
                     lastError = AgentError.runError(message: e.message, code: e.code)
