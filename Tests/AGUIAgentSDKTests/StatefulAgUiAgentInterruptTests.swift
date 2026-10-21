@@ -86,6 +86,38 @@ final class StatefulAgUiAgentInterruptTests: XCTestCase {
         }
     }
 
+    func testNextRunAfterCancelledIsANormalNewRunNotAResume() async throws {
+        let (agent, transport) = makeAgent()
+        try await pause(agent, transport, on: [Interrupt(id: "i1", reason: .toolCall)])
+        await transport.setMockEvents([
+            RunStartedEvent(threadId: threadId, runId: "r2"),
+            RunFinishedEvent(threadId: threadId, runId: "r2", outcome: .cancelled),
+        ])
+        try await drain(agent.resume(threadId: threadId, entries: [.cancelled(interruptId: "i1")]))
+
+        await transport.setMockEvents([
+            RunStartedEvent(threadId: threadId, runId: "r3"),
+            RunFinishedEvent(threadId: threadId, runId: "r3", outcome: .success()),
+        ])
+        try await drain(agent.sendMessage(
+            message: "Next", threadId: threadId, state: nil, includeSystemPrompt: false
+        ))
+
+        let inputs = await transport.capturedInputs
+        XCTAssertEqual(inputs.count, 3)
+        XCTAssertNil(inputs[2].resume)
+        XCTAssertNotEqual(inputs[2].runId, inputs[1].runId)
+        XCTAssertEqual(inputs[2].messages.last?.role, .user)
+
+        // A leftover resume is not accepted either: nothing is pending any more.
+        do {
+            _ = try await agent.resume(threadId: threadId, entries: [.cancelled(interruptId: "i1")])
+            XCTFail("expected unknownInterrupts")
+        } catch {
+            XCTAssertEqual(error as? InterruptError, .unknownInterrupts(ids: ["i1"]))
+        }
+    }
+
     func testClearHistoryClearsPendingInterrupts() async throws {
         let (agent, transport) = makeAgent()
         try await pause(agent, transport, on: [Interrupt(id: "i1", reason: .toolCall)])

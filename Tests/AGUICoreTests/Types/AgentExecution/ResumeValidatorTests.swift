@@ -74,7 +74,75 @@ final class ResumeValidatorTests: XCTestCase {
         XCTAssertFalse(InterruptExpiry.isExpired(Interrupt(id: "d", reason: .toolCall, expiresAt: "soon")))
     }
 
+    func testEmptyEntriesAndEmptyPendingIsValid() {
+        XCTAssertNoThrow(try ResumeValidator.validate(entries: [], pending: []))
+    }
+
+    func testEmptyEntriesLeaveEveryPendingInterruptUnanswered() {
+        let pending = [Interrupt(id: "a", reason: .toolCall), Interrupt(id: "b", reason: .toolCall)]
+        XCTAssertThrowsError(try ResumeValidator.validate(entries: [], pending: pending)) {
+            XCTAssertEqual($0 as? InterruptError, .unansweredInterrupts(ids: ["a", "b"]))
+        }
+    }
+
+    func testDeadlineEqualToNowIsExpired() throws {
+        let pending = [Interrupt(id: "a", reason: .toolCall, expiresAt: "2030-01-01T00:00:00Z")]
+        let deadline = try XCTUnwrap(InterruptExpiry.parse("2030-01-01T00:00:00Z"))
+        XCTAssertThrowsError(try ResumeValidator.validate(
+            entries: [.resolved(interruptId: "a")], pending: pending, now: deadline
+        )) {
+            XCTAssertEqual($0 as? InterruptError, .expired(id: "a"))
+        }
+        XCTAssertNoThrow(try ResumeValidator.validate(
+            entries: [.cancelled(interruptId: "a")], pending: pending, now: deadline
+        ))
+        XCTAssertNoThrow(try ResumeValidator.validate(
+            entries: [.resolved(interruptId: "a")], pending: pending,
+            now: deadline.addingTimeInterval(-0.001)
+        ))
+    }
+
+    func testOnlyExpiredInterruptsAreRestrictedToCancelled() {
+        let pending = [
+            Interrupt(id: "old", reason: .toolCall, expiresAt: past),
+            Interrupt(id: "live", reason: .toolCall, expiresAt: future),
+        ]
+        XCTAssertNoThrow(try ResumeValidator.validate(
+            entries: [.cancelled(interruptId: "old"), .resolved(interruptId: "live")], pending: pending
+        ))
+        XCTAssertThrowsError(try ResumeValidator.validate(
+            entries: [.resolved(interruptId: "old"), .resolved(interruptId: "live")], pending: pending
+        )) {
+            XCTAssertEqual($0 as? InterruptError, .expired(id: "old"))
+        }
+    }
+
+    func testDuplicateEntriesForOneInterruptAreRejected() {
+        let pending = [Interrupt(id: "a", reason: .toolCall)]
+        XCTAssertThrowsError(try ResumeValidator.validate(
+            entries: [.resolved(interruptId: "a"), .cancelled(interruptId: "a"), .resolved(interruptId: "a")],
+            pending: pending
+        )) {
+            XCTAssertEqual($0 as? InterruptError, .duplicateEntries(ids: ["a"]))
+        }
+    }
+
+    func testDuplicateCancelledFirstCannotHideResolvedAnswerToExpiredInterrupt() {
+        let pending = [Interrupt(id: "a", reason: .toolCall, expiresAt: past)]
+        XCTAssertThrowsError(try ResumeValidator.validate(
+            entries: [.cancelled(interruptId: "a"), .resolved(interruptId: "a")], pending: pending
+        ))
+    }
+
+    func testPendingInterruptsWithDuplicateIdsNeedOneEntry() {
+        let pending = [Interrupt(id: "a", reason: .toolCall), Interrupt(id: "a", reason: .toolCall)]
+        XCTAssertNoThrow(try ResumeValidator.validate(
+            entries: [.cancelled(interruptId: "a")], pending: pending
+        ))
+    }
+
     func testInterruptErrorDescriptions() {
+        XCTAssertNotNil(InterruptError.duplicateEntries(ids: ["x"]).errorDescription)
         XCTAssertEqual(
             InterruptError.unansweredInterrupts(ids: ["a", "b"]).errorDescription,
             "Thread has 2 pending interrupt(s) not addressed by resume: a, b"
