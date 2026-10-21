@@ -26,10 +26,11 @@ public struct AGUIProtocolError: Error, Sendable {
 /// Warnings are reported through the `onWarning` hook of
 /// ``Swift/AsyncSequence/verifyEvents(debug:onWarning:)``. The package has no
 /// logging framework yet; routing these to a logger is a deferred decision.
-public struct AGUIProtocolWarning: Sendable, Equatable {
+public struct AGUIProtocolWarning: Sendable, Hashable {
     /// A human-readable description of what was observed.
     public let message: String
 
+    /// Creates a warning describing a non-fatal protocol condition.
     public init(message: String) {
         self.message = message
     }
@@ -217,9 +218,11 @@ private final class EventVerifier {
             break
         }
 
+        #if DEBUG
         if debug {
             print("[EventVerifier] Verified: \(type)")
         }
+        #endif
         return true
     }
 
@@ -360,9 +363,11 @@ private final class EventVerifier {
 
     private func warn(_ message: String) {
         onWarning?(AGUIProtocolWarning(message: message))
+        #if DEBUG
         if debug {
             print("[EventVerifier] Warning: \(message)")
         }
+        #endif
     }
 }
 

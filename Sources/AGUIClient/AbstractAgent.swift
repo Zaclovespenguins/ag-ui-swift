@@ -31,9 +31,16 @@ internal extension AgentStorage {
 /// pipeline can tell a cancelled run from a completed one.
 private actor RunOutcomeRecorder {
     private(set) var outcome: RunFinishedOutcome?
+    private(set) var failure: RunErrorEvent?
 
     func observe(_ event: any AGUIEvent) {
-        if let finished = event as? RunFinishedEvent {
+        if event is RunStartedEvent {
+            outcome = nil
+            failure = nil
+        } else if let failed = event as? RunErrorEvent {
+            failure = failed
+            outcome = nil
+        } else if let finished = event as? RunFinishedEvent {
             outcome = finished.outcome
         }
     }
@@ -123,6 +130,10 @@ public final class AbstractAgent: Sendable {
                     await self.applyAgentState(agentState, input: input, subscribers: allSubscribers)
                 }
 
+                if let failure = await recorder.failure {
+                    throw AgentRunError(event: failure)
+                }
+
                 let finalMessages = await self.storage.messages
                 let finalState = await self.storage.currentState
                 // A cancelled run (a `.cancelled` RUN_FINISHED, or a local abort) is
@@ -139,7 +150,7 @@ public final class AbstractAgent: Sendable {
                     }
                     return await sub.onRunFinalized(params: params)
                 }
-            } catch is CancellationError {
+            } catch where error is CancellationError || (error as? ClientError) == .cancelled {
                 // Cancelled locally: not an error. Subscribers hear onRunCancelled;
                 // the error still propagates to the caller of runAgent.
                 let currentMsgs = await self.storage.messages
@@ -152,7 +163,7 @@ public final class AbstractAgent: Sendable {
                     let params = AgentSubscriberParams(messages: msgs, state: st, input: input)
                     return await sub.onRunCancelled(params: params)
                 }
-                throw CancellationError()
+                throw error
             } catch {
                 let currentMsgs = await self.storage.messages
                 let currentSt = await self.storage.currentState

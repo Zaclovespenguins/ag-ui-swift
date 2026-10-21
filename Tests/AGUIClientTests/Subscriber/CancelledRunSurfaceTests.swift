@@ -7,6 +7,52 @@ import XCTest
 /// B11: a cancelled run is neither success nor error.
 final class CancelledRunSurfaceTests: XCTestCase {
 
+    func testProducerRunErrorCallsFailureOnly() async {
+        let counts = await run([RunErrorEvent(message: "producer failed", code: "TEST")])
+        XCTAssertEqual(counts.finalized, 0)
+        XCTAssertEqual(counts.failed, 1)
+        XCTAssertEqual(counts.cancelled, 0)
+    }
+
+    func testProducerFailurePreservesEventAndIsNotProtocolRejection() async {
+        let event = RunErrorEvent(message: "producer failed", code: "TEST")
+        let agent = AbstractAgent(transport: ScriptedTransport(events: [event], finishWithError: nil))
+        do {
+            try await agent.runAgent()
+            XCTFail("Expected a producer failure")
+        } catch {
+            XCTAssertFalse(error is AGUIProtocolError)
+            XCTAssertEqual((error as? AgentRunError)?.event, event)
+        }
+    }
+
+    func testLateProducerRunErrorOverridesSuccess() async {
+        let counts = await run([
+            RunStartedEvent(threadId: "t", runId: "r"),
+            RunFinishedEvent(threadId: "t", runId: "r"),
+            RunErrorEvent(message: "late failure"),
+        ])
+        XCTAssertEqual(counts.finalized, 0)
+        XCTAssertEqual(counts.failed, 1)
+    }
+
+    func testReplayFailureDoesNotFailSuccessfulNewRun() async {
+        let counts = await run([
+            RunErrorEvent(message: "historical failure"),
+            RunStartedEvent(threadId: "t", runId: "new"),
+            RunFinishedEvent(threadId: "t", runId: "new"),
+        ])
+        XCTAssertEqual(counts.finalized, 1)
+        XCTAssertEqual(counts.failed, 0)
+    }
+
+    func testTransportCancellationCallsCancelledOnly() async {
+        let counts = await run([], error: ClientError.cancelled)
+        XCTAssertEqual(counts.finalized, 0)
+        XCTAssertEqual(counts.failed, 0)
+        XCTAssertEqual(counts.cancelled, 1)
+    }
+
     private actor Recorder: AgentSubscriber {
         var finalized = 0
         var failed = 0
