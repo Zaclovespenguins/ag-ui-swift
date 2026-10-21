@@ -275,7 +275,7 @@ final class MessageEncoderTests: XCTestCase {
         XCTAssertNil(json["error"])
     }
 
-    func test_encodeToolMessage_withName_includesName() throws {
+    func test_encodeToolMessage_withName_omitsNameBecauseSchemaHasNone() throws {
         // Given
         let message = ToolMessage(
             id: "tool-4",
@@ -288,7 +288,8 @@ final class MessageEncoderTests: XCTestCase {
         let json = try json(from: message)
 
         // Then
-        XCTAssertEqual(json["name"] as? String, "weather_tool")
+        // AG-UI 1.0 schema.json: ToolMessage declares no `name` and forbids extra properties.
+        XCTAssertNil(json["name"])
     }
 
     func test_encodeToolMessage_withoutName_omitsName() throws {
@@ -450,6 +451,46 @@ final class MessageEncoderTests: XCTestCase {
                 return XCTFail("Expected invalidMessageType, got \(error)")
             }
             XCTAssertEqual(role, .system)
+        }
+    }
+
+    // MARK: - Feature: encryptedValue on the wire (B12, AG-UI 1.0 schema.json)
+
+    func test_encodeDeveloperMessage_withEncryptedValue_includesIt() throws {
+        let json = try json(from: DeveloperMessage(id: "d", content: "c", encryptedValue: "enc-d"))
+        XCTAssertEqual(json["encryptedValue"] as? String, "enc-d")
+    }
+
+    func test_encodeSystemMessage_withEncryptedValue_includesIt() throws {
+        let json = try json(from: SystemMessage(id: "s", content: "c", encryptedValue: "enc-s"))
+        XCTAssertEqual(json["encryptedValue"] as? String, "enc-s")
+    }
+
+    func test_encodeUserMessage_withEncryptedValue_includesIt() throws {
+        let json = try json(from: UserMessage(id: "u", content: "c", encryptedValue: "enc-u"))
+        XCTAssertEqual(json["encryptedValue"] as? String, "enc-u")
+    }
+
+    func test_encodeAssistantMessage_withEncryptedValue_includesIt() throws {
+        let json = try json(from: AssistantMessage(id: "a", content: "c", encryptedValue: "enc-a"))
+        XCTAssertEqual(json["encryptedValue"] as? String, "enc-a")
+    }
+
+    func test_encodeToolMessage_withEncryptedValue_includesIt() throws {
+        let json = try json(from: ToolMessage(id: "t", content: "c", toolCallId: "c1", encryptedValue: "enc-t"))
+        XCTAssertEqual(json["encryptedValue"] as? String, "enc-t")
+    }
+
+    func test_encodeMessages_withoutEncryptedValue_omitIt() throws {
+        let messages: [any Message] = [
+            DeveloperMessage(id: "d", content: "c"),
+            SystemMessage(id: "s", content: "c"),
+            UserMessage(id: "u", content: "c"),
+            AssistantMessage(id: "a", content: "c"),
+            ToolMessage(id: "t", content: "c", toolCallId: "c1")
+        ]
+        for message in messages {
+            XCTAssertNil(try json(from: message)["encryptedValue"], "role \(message.role)")
         }
     }
 }
