@@ -24,7 +24,7 @@ struct ReasoningMessageDTO {
         let content = try MessageDecodingHelpers.extractRequiredString(from: jsonObject, key: "content")
 
         // Extract optional fields
-        let encryptedValue = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "encryptedValue")
+        let encryptedValue = try MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "encryptedValue")
 
         return ReasoningMessageDTO(id: id, content: content, encryptedValue: encryptedValue)
     }

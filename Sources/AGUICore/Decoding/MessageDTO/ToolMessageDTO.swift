@@ -27,10 +27,10 @@ struct ToolMessageDTO {
         let toolCallId = try MessageDecodingHelpers.extractRequiredString(from: jsonObject, key: "toolCallId")
 
         // Extract optional fields
-        let content = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "content")
-        let name = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "name")
-        let error = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "error")
-        let encryptedValue = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "encryptedValue")
+        let content = try MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "content")
+        let name = try MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "name")
+        let error = try MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "error")
+        let encryptedValue = try MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "encryptedValue")
 
         return ToolMessageDTO(id: id, toolCallId: toolCallId, content: content, name: name, error: error, encryptedValue: encryptedValue)
     }

@@ -50,7 +50,7 @@ struct RunStartedEventDTO {
             )
         }
 
-        let parentRunId = jsonObject["parentRunId"] as? String
+        let parentRunId = try OptionalField.string("parentRunId", in: jsonObject)
         let timestamp = try EventDecodingHelpers.extractTimestamp(from: jsonObject)
 
         var inputData: Data?

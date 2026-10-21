@@ -25,8 +25,8 @@ struct UserMessageDTO {
         let id = try MessageDecodingHelpers.extractRequiredString(from: jsonObject, key: "id")
 
         // Extract optional fields
-        let name = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "name")
-        let encryptedValue = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "encryptedValue")
+        let name = try MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "name")
+        let encryptedValue = try MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "encryptedValue")
 
         // Handle polymorphic content (String or Array of InputContent)
         guard let contentValue = jsonObject["content"] else {

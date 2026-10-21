@@ -39,7 +39,7 @@ struct ActivitySnapshotEventDTO {
         }
 
         // Extract replace field (defaults to true if not present)
-        let replace = (jsonObject["replace"] as? Bool) ?? true
+        let replace = try OptionalField.bool("replace", in: jsonObject) ?? true
 
         // Extract timestamp using shared helper
         let timestamp = try EventDecodingHelpers.extractTimestamp(from: jsonObject)
