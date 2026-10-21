@@ -286,7 +286,7 @@ final class EventStreamTests: XCTestCase {
             sseData += "data: {\"type\":\"TEXT_MESSAGE_CHUNK\",\"messageId\":\"msg1\",\"delta\":\"\(i)\"}\n\n"
         }
 
-        let bytes = MockAsyncBytes(data: Data(sseData.utf8))
+        let bytes = MockAsyncBytes(data: Data(sseData.utf8), chunkSize: 1024)
         let decoder = AGUIEventDecoder()
 
         let stream = EventStream(bytes: bytes, decoder: decoder)
