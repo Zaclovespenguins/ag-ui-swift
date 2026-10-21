@@ -5,6 +5,7 @@
 #if canImport(Observation)
 
 import AGUICore
+import AGUIClient
 import XCTest
 @testable import AGUIAgentSDK
 
@@ -25,6 +26,34 @@ final class AgentViewModelTests: XCTestCase {
         sut = nil
         mock = nil
         super.tearDown()
+    }
+
+    func testThrownCancellationIsNotAnError() async {
+        for error in [CancellationError() as Error, ClientError.cancelled] {
+            mock.streamThrows = error
+            await sut.send("cancelled")
+            XCTAssertTrue(sut.lastRunWasCancelled)
+            XCTAssertNil(sut.lastError)
+            XCTAssertFalse(sut.isRunning)
+        }
+    }
+
+    func testLocalTaskCancellationSetsCancelledFlag() async {
+        let sendTask = Task { await sut.send("cancelled") }
+        sendTask.cancel()
+        await sendTask.value
+        XCTAssertTrue(sut.lastRunWasCancelled)
+        XCTAssertNil(sut.lastError)
+    }
+
+    func testLateErrorOverridesCancelledFlag() async {
+        mock.eventsToYield = [
+            RunFinishedEvent(threadId: "t", runId: "r", outcome: .cancelled),
+            RunErrorEvent(message: "late failure"),
+        ]
+        await sut.send("hi")
+        XCTAssertFalse(sut.lastRunWasCancelled)
+        XCTAssertNotNil(sut.lastError)
     }
 
     // MARK: - Initial state

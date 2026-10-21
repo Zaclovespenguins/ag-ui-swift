@@ -1,6 +1,7 @@
 // Copyright (c) 2025 Perfect Aduh. MIT License. See LICENSE for details.
 
 import AGUICore
+import AGUIClient
 import Combine
 import Foundation
 
@@ -32,7 +33,7 @@ public final class AgentViewModelCompat: ObservableObject {
     /// Set to `nil` automatically at the start of each `send()` call.
     @Published public private(set) var lastError: Error? = nil
 
-    /// `true` if the most recent run ended with a cancelled outcome.
+    /// `true` if the most recent run was cancelled by the producer or locally.
     ///
     /// A cancelled run is neither a success nor an error, so it leaves
     /// ``lastError`` as `nil`. Check this flag to show a "cancelled" state
@@ -97,17 +98,30 @@ public final class AgentViewModelCompat: ObservableObject {
                         content: current.content + e.delta
                     )
 
+                case is RunStartedEvent:
+                    lastRunWasCancelled = false
+                    lastError = nil
+
                 case let e as RunFinishedEvent:
-                    if e.outcome == .cancelled { lastRunWasCancelled = true }
+                    lastRunWasCancelled = e.outcome == .cancelled
 
                 case let e as RunErrorEvent:
+                    lastRunWasCancelled = false
                     lastError = AgentError.runError(message: e.message, code: e.code)
 
                 default:
                     break
                 }
             }
+            if Task.isCancelled {
+                lastRunWasCancelled = true
+                lastError = nil
+            }
+        } catch where error is CancellationError || (error as? ClientError) == .cancelled {
+            lastRunWasCancelled = true
+            lastError = nil
         } catch {
+            lastRunWasCancelled = false
             lastError = error
         }
 
