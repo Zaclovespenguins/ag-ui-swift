@@ -21,7 +21,7 @@ struct RunErrorEventDTO {
             )
         }
 
-        let code = jsonObject["code"] as? String
+        let code = try OptionalField.string("code", in: jsonObject)
         let timestamp = try EventDecodingHelpers.extractTimestamp(from: jsonObject)
 
         return RunErrorEventDTO(message: message, code: code, timestamp: timestamp)
