@@ -75,7 +75,8 @@ extension TextMessageStartEvent: Decodable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         messageId = try container.decode(String.self, forKey: .messageId)
-        role = try container.decode(String.self, forKey: .role)
+        // AG-UI 1.0 schema.json: `role` is optional on TEXT_MESSAGE_START; assistant is the default.
+        role = try container.decodeIfPresent(String.self, forKey: .role) ?? "assistant"
         name = try container.decodeIfPresent(String.self, forKey: .name)
         timestamp = try container.decodeIfPresent(Int64.self, forKey: .timestamp)
         rawEvent = nil

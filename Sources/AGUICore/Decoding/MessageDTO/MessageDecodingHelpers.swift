@@ -44,12 +44,10 @@ enum MessageDecodingHelpers {
     /// - Parameters:
     ///   - jsonObject: The JSON dictionary containing the field
     ///   - key: The key to extract
-    /// - Returns: The string value or nil if not present
-    static func extractOptionalString(from jsonObject: [String: Any], key: String) -> String? {
-        guard let value = jsonObject[key], !(value is NSNull) else {
-            return nil
-        }
-        return value as? String
+    /// - Returns: The string value or nil if absent or null
+    /// - Throws: `DecodingError.typeMismatch` if the field is present with a non-string value
+    static func extractOptionalString(from jsonObject: [String: Any], key: String) throws -> String? {
+        try OptionalField.string(key, in: jsonObject)
     }
 
     /// Extracts role from JSON and validates it.

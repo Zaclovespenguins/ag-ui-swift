@@ -31,30 +31,17 @@ public struct HttpAgentTransport: AgentTransport {
 
         return AsyncThrowingStream { continuation in
             let task = Task {
-                var lastEventId: String? = nil
                 var attempt = 0
-                var currentStream: EventStream<AsyncThrowingStream<UInt8, Error>>? = nil
 
+                // Connection phase. Only a failure to obtain a response is retried,
+                // and every attempt is a fresh request: the transport never resumes
+                // a stream (no `Last-Event-ID`), per `basic/transports/http-sse`.
+                var bytes: AsyncThrowingStream<UInt8, Error>
                 while true {
                     do {
-                        let bytes = try await transport.execute(
-                            endpoint: endpoint,
-                            input: input,
-                            lastEventId: lastEventId
-                        )
-                        let eventStream = EventStream(bytes: bytes, decoder: decoder)
-                        currentStream = eventStream
-                        for try await event in eventStream {
-                            continuation.yield(event)
-                        }
-                        continuation.finish()
-                        return
+                        bytes = try await transport.execute(endpoint: endpoint, input: input)
+                        break
                     } catch {
-                        if let stream = currentStream {
-                            lastEventId = await stream.lastEventId ?? lastEventId
-                        }
-                        currentStream = nil
-
                         guard shouldRetry(error: error, attempt: attempt, configuration: configuration) else {
                             continuation.finish(throwing: error)
                             return
@@ -68,6 +55,19 @@ public struct HttpAgentTransport: AgentTransport {
                         }
                     }
                 }
+
+                // Streaming phase. A stream that fails or closes early is never
+                // retried or reported as success.
+                do {
+                    for try await event in EventStream(bytes: bytes, decoder: decoder, requiresTerminalEvent: true) {
+                        continuation.yield(event)
+                    }
+                } catch {
+                    continuation.finish(throwing: error)
+                    return
+                }
+
+                continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
         }

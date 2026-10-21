@@ -513,7 +513,7 @@ public final class StatefulAgUiAgent: Sendable {
                             }
                             let toolMessage = ToolMessage(
                                 id: result.messageId,
-                                content: result.content,
+                                resultContent: result.resultContent,
                                 toolCallId: result.toolCallId
                             )
                             await self.historyManager.append(message: toolMessage, to: threadId)
@@ -522,6 +522,8 @@ public final class StatefulAgUiAgent: Sendable {
 
                         case let finished as RunFinishedEvent:
                             // An interrupt outcome pauses the thread; any other outcome clears it.
+                            // A `.cancelled` outcome is not an error and not a success: it adds
+                            // no history beyond what was streamed and leaves nothing pending.
                             await self.interruptManager.set(finished.outcome.interrupts, for: threadId)
 
                         // MARK: State events

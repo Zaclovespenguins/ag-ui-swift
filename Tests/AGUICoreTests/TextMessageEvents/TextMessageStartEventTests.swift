@@ -149,8 +149,8 @@ final class TextMessageStartEventTests: XCTestCase,
         }
     }
 
-    func test_decodeTextMessageStart_missingRole_throwsDecodingFailed() {
-        // Given
+    func test_decodeTextMessageStart_missingRole_defaultsToAssistant() throws {
+        // AG-UI 1.0 schema.json: TextMessageStartEvent requires only `type` and `messageId`.
         let data = jsonData("""
         {
           "type": "TEXT_MESSAGE_START",
@@ -159,13 +159,10 @@ final class TextMessageStartEventTests: XCTestCase,
         """)
         let decoder = makeStrictDecoder()
 
-        // When / Then
-        XCTAssertThrowsError(try decoder.decode(data)) { error in
-            guard case .decodingFailed(let message) = error as? EventDecodingError else {
-                return XCTFail("Expected decodingFailed, got \(error)")
-            }
-            XCTAssertTrue(message.contains("role") || message.contains("Missing key"))
-        }
+        let event = try decoder.decode(data)
+
+        let start = try XCTUnwrap(event as? TextMessageStartEvent)
+        XCTAssertEqual(start.role, "assistant")
     }
 
     func test_decodeTextMessageStart_wrongTypeForMessageId_throwsDecodingFailed() {

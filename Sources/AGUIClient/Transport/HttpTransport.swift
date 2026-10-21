@@ -98,6 +98,7 @@ public actor HttpTransport {
     ///
     /// Validates the HTTP response:
     /// - Status code must be 200-299
+    /// - `Content-Type`, when present, must be `text/event-stream`
     /// - Response must be HTTPURLResponse
     ///
     /// ## Error Handling
@@ -105,6 +106,7 @@ public actor HttpTransport {
     /// Throws `ClientError` for:
     /// - Encoding failures → `.encodingError`
     /// - Non-2xx status codes → `.httpError(statusCode:)`
+    /// - A non-SSE `Content-Type` → `.streamError`
     /// - Invalid responses → `.invalidResponse`
     /// - Network errors → `.networkError`, `.timeout`, `.cancelled`
     public func execute(
@@ -129,7 +131,8 @@ public actor HttpTransport {
         // Encode RunAgentInput to JSON
         let encoder = JSONEncoder()
         do {
-            request.httpBody = try encoder.encode(input)
+            // Activity messages are display-only and MUST NOT be sent (basic/run-input).
+            request.httpBody = try encoder.encode(input.strippingActivityMessages())
         } catch {
             throw ClientError.encodingError(error)
         }
@@ -140,6 +143,21 @@ public actor HttpTransport {
         // Validate HTTP status code
         guard (200...299).contains(response.statusCode) else {
             throw ClientError.httpError(statusCode: response.statusCode)
+        }
+
+        // Validate Content-Type: the response must be an SSE stream. A missing
+        // header is tolerated; a present, different media type is rejected before
+        // any bytes are decoded.
+        if let contentType = response.httpResponse.value(forHTTPHeaderField: "Content-Type") {
+            let mediaType = contentType
+                .split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespaces)
+                .lowercased() ?? ""
+            guard mediaType == "text/event-stream" else {
+                throw ClientError.streamError(
+                    "Unexpected Content-Type '\(contentType)', expected text/event-stream"
+                )
+            }
         }
 
         return response.bytes

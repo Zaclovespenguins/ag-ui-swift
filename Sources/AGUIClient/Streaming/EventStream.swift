@@ -40,6 +40,8 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
     /// The AG-UI event decoder.
     private let decoder: AGUIEventDecoder
 
+    private let requiresTerminalEvent: Bool
+
     /// Shared box updated by the iterator whenever a non-nil SSE `id:` field is seen.
     private let lastEventIdBox = LastEventIdBox()
 
@@ -47,8 +49,8 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
 
     /// The most recent SSE event `id:` field received, or `nil` if none has arrived yet.
     ///
-    /// Read this after a mid-stream failure to obtain the resume cursor for
-    /// `Last-Event-ID` on reconnect.
+    /// Retained for diagnostics and compatibility. AG-UI 1.0 does not use SSE
+    /// identifiers to resume a broken stream.
     public var lastEventId: String? { get async { await lastEventIdBox.value } }
 
     // MARK: - Initialization
@@ -59,13 +61,21 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
     ///   - bytes: Async sequence of bytes from HTTP streaming response
     ///   - decoder: AG-UI event decoder
     public init(bytes: Bytes, decoder: AGUIEventDecoder) {
+        self.init(bytes: bytes, decoder: decoder, requiresTerminalEvent: false)
+    }
+
+    init(bytes: Bytes, decoder: AGUIEventDecoder, requiresTerminalEvent: Bool) {
         self.bytes = bytes
         self.decoder = decoder
+        self.requiresTerminalEvent = requiresTerminalEvent
     }
 
     /// Creates an async iterator for streaming events.
     public func makeAsyncIterator() -> AsyncIterator {
-        AsyncIterator(bytes: bytes.makeAsyncIterator(), decoder: decoder, lastEventIdBox: lastEventIdBox)
+        AsyncIterator(
+            bytes: bytes.makeAsyncIterator(), decoder: decoder, lastEventIdBox: lastEventIdBox,
+            requiresTerminalEvent: requiresTerminalEvent
+        )
     }
 
     /// Iterator that processes streaming bytes into AG-UI events.
@@ -96,6 +106,8 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
 
         /// Shared reference that is updated with the most recent SSE `id:` value.
         private let lastEventIdBox: LastEventIdBox
+        private let requiresTerminalEvent: Bool
+        private var sawTerminalEvent = false
 
         /// Creates a new iterator.
         ///
@@ -103,10 +115,14 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
         ///   - bytes: Source byte iterator
         ///   - decoder: AG-UI event decoder
         ///   - lastEventIdBox: Shared box written to whenever a non-nil SSE id is seen
-        init(bytes: Bytes.AsyncIterator, decoder: AGUIEventDecoder, lastEventIdBox: LastEventIdBox) {
+        init(
+            bytes: Bytes.AsyncIterator, decoder: AGUIEventDecoder, lastEventIdBox: LastEventIdBox,
+            requiresTerminalEvent: Bool
+        ) {
             self.bytesIterator = bytes
             self.decoder = decoder
             self.lastEventIdBox = lastEventIdBox
+            self.requiresTerminalEvent = requiresTerminalEvent
         }
 
         /// Whether the raw event data has `"type": "RUN_FINISHED"`.
@@ -128,6 +144,20 @@ public struct EventStream<Bytes: AsyncSequence>: AsyncSequence where Bytes.Eleme
         /// - Throws: Network errors, or `ClientError.decodingError` when a `RUN_FINISHED`
         ///   event cannot be decoded. Other undecodable events are skipped.
         public mutating func next() async throws -> (any AGUIEvent)? {
+            let event = try await decodeNext()
+            if let event {
+                if event is RunStartedEvent {
+                    sawTerminalEvent = false
+                } else if event is RunFinishedEvent || event is RunErrorEvent {
+                    sawTerminalEvent = true
+                }
+            } else if requiresTerminalEvent && !sawTerminalEvent {
+                throw ClientError.streamError("Connection closed before RUN_FINISHED or RUN_ERROR")
+            }
+            return event
+        }
+
+        private mutating func decodeNext() async throws -> (any AGUIEvent)? {
             // Return queued events first.
             // Yield before returning a buffered event so callers on the main actor
             // give the run loop a chance to render UI between events. Without this,

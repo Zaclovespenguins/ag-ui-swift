@@ -85,7 +85,8 @@ struct RunFinishedEventDTO {
 
         switch type {
         case "success":
-            return .success(pendingToolCallIds: object["pendingToolCallIds"] as? [String] ?? [])
+            let pending = try OptionalField.stringArray("pendingToolCallIds", in: object, codingPath: [CodingKeys.outcome])
+            return .success(pendingToolCallIds: pending ?? [])
         case "cancelled":
             return .cancelled
         case "interrupt":
@@ -129,15 +130,16 @@ struct RunFinishedEventDTO {
             return try? JSONSerialization.data(withJSONObject: value, options: .fragmentsAllowed)
         }
 
+        let path: [CodingKey] = [CodingKeys.outcome]
         return Interrupt(
             id: id,
             reason: InterruptReason(rawValue: reason),
-            message: object["message"] as? String,
-            toolCallId: object["toolCallId"] as? String,
+            message: try OptionalField.string("message", in: object, codingPath: path),
+            toolCallId: try OptionalField.string("toolCallId", in: object, codingPath: path),
             responseSchema: jsonData(.responseSchema),
-            expiresAt: object["expiresAt"] as? String,
+            expiresAt: try OptionalField.string("expiresAt", in: object, codingPath: path),
             metadata: jsonData(.metadata),
-            subagentRunId: object["subagentRunId"] as? String
+            subagentRunId: try OptionalField.string("subagentRunId", in: object, codingPath: path)
         )
     }
 

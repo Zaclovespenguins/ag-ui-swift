@@ -32,7 +32,16 @@ public struct ToolMessage: Message, Sendable, Hashable {
     ///
     /// While the protocol allows optional content, tool messages in practice always
     /// contain content describing the result.
-    public let content: String?
+    ///
+    /// This is `nil` when the result is an array of parts; read ``resultContent`` for
+    /// either shape.
+    public var content: String? { resultContent?.text }
+
+    /// The tool's result as a string or an ordered array of content parts.
+    ///
+    /// A message whose parts were all dropped on decode is `.parts([])`; it still answers
+    /// the call named by ``toolCallId``.
+    public let resultContent: ToolResultContent?
 
     /// The ID of the tool call this message responds to.
     ///
@@ -79,7 +88,33 @@ public struct ToolMessage: Message, Sendable, Hashable {
     ) {
         self.id = id
         self.role = .tool
-        self.content = content
+        self.resultContent = .text(content)
+        self.toolCallId = toolCallId
+        self.name = name
+        self.error = error
+        self.encryptedValue = encryptedValue
+    }
+
+    /// Creates a new tool message whose result is a string or an array of content parts.
+    ///
+    /// - Parameters:
+    ///   - id: Unique identifier for this message
+    ///   - resultContent: The result, as a string or ordered content parts
+    ///   - toolCallId: The ID of the tool call this message responds to
+    ///   - name: Optional name of the tool that generated this message
+    ///   - error: Optional error message if tool execution failed
+    ///   - encryptedValue: Optional encrypted value for verified tool execution
+    public init(
+        id: String,
+        resultContent: ToolResultContent,
+        toolCallId: String,
+        name: String? = nil,
+        error: String? = nil,
+        encryptedValue: String? = nil
+    ) {
+        self.id = id
+        self.role = .tool
+        self.resultContent = resultContent
         self.toolCallId = toolCallId
         self.name = name
         self.error = error

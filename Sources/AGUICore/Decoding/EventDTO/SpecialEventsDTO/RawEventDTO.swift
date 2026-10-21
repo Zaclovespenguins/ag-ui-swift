@@ -24,7 +24,7 @@ struct RawEventDTO {
         }
 
         // Extract optional source field
-        let source = jsonObject["source"] as? String
+        let source = try OptionalField.string("source", in: jsonObject)
 
         // Extract timestamp using shared helper
         let timestamp = try EventDecodingHelpers.extractTimestamp(from: jsonObject)

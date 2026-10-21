@@ -25,6 +25,27 @@ internal extension AgentStorage {
     func setDisposed(_ disposed: Bool) { self.isDisposed = disposed }
 }
 
+// MARK: - RunOutcomeRecorder
+
+/// Remembers the outcome of the `RUN_FINISHED` event a run delivered, so the
+/// pipeline can tell a cancelled run from a completed one.
+private actor RunOutcomeRecorder {
+    private(set) var outcome: RunFinishedOutcome?
+    private(set) var failure: RunErrorEvent?
+
+    func observe(_ event: any AGUIEvent) {
+        if event is RunStartedEvent {
+            outcome = nil
+            failure = nil
+        } else if let failed = event as? RunErrorEvent {
+            failure = failed
+            outcome = nil
+        } else if let finished = event as? RunFinishedEvent {
+            outcome = finished.outcome
+        }
+    }
+}
+
 // MARK: - AbstractAgent
 
 public final class AbstractAgent: Sendable {
@@ -64,7 +85,7 @@ public final class AbstractAgent: Sendable {
     // MARK: - Run method
 
     public func run(input: RunAgentInput) -> AsyncThrowingStream<any AGUIEvent, Error> {
-        transport.run(input: input)
+        transport.run(input: input.strippingActivityMessages())
     }
 
     // MARK: - Public pipeline methods
@@ -95,25 +116,54 @@ public final class AbstractAgent: Sendable {
         let task = Task<Void, Error> {
             do {
                 let eventStream = self.run(input: input)
+                let recorder = RunOutcomeRecorder()
                 let processedStream = eventStream
                     .transformChunks()
                     .verifyEvents(debug: self.debug)
+                    .map { (event: any AGUIEvent) -> any AGUIEvent in
+                        await recorder.observe(event)
+                        return event
+                    }
                     .applyEvents(input: input, subscribers: allSubscribers)
 
                 for try await agentState in processedStream {
                     await self.applyAgentState(agentState, input: input, subscribers: allSubscribers)
                 }
 
+                if let failure = await recorder.failure {
+                    throw AgentRunError(event: failure)
+                }
+
                 let finalMessages = await self.storage.messages
                 let finalState = await self.storage.currentState
+                // A cancelled run (a `.cancelled` RUN_FINISHED, or a local abort) is
+                // neither a success nor an error: report it on its own hook.
+                let wasCancelled = await recorder.outcome == .cancelled || Task.isCancelled
                 _ = await runSubscribersWithMutation(
                     subscribers: allSubscribers,
                     messages: finalMessages,
                     state: finalState
                 ) { sub, msgs, st in
                     let params = AgentSubscriberParams(messages: msgs, state: st, input: input)
+                    if wasCancelled {
+                        return await sub.onRunCancelled(params: params)
+                    }
                     return await sub.onRunFinalized(params: params)
                 }
+            } catch where error is CancellationError || (error as? ClientError) == .cancelled {
+                // Cancelled locally: not an error. Subscribers hear onRunCancelled;
+                // the error still propagates to the caller of runAgent.
+                let currentMsgs = await self.storage.messages
+                let currentSt = await self.storage.currentState
+                _ = await runSubscribersWithMutation(
+                    subscribers: allSubscribers,
+                    messages: currentMsgs,
+                    state: currentSt
+                ) { sub, msgs, st in
+                    let params = AgentSubscriberParams(messages: msgs, state: st, input: input)
+                    return await sub.onRunCancelled(params: params)
+                }
+                throw error
             } catch {
                 let currentMsgs = await self.storage.messages
                 let currentSt = await self.storage.currentState

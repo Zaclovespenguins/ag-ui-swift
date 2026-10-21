@@ -45,7 +45,7 @@ public final class HttpAgent: Sendable {
             endpoint: endpoint ?? defaultEndpoint,
             input: input
         )
-        return EventStream(bytes: bytes, decoder: decoder)
+        return EventStream(bytes: bytes, decoder: decoder, requiresTerminalEvent: true)
     }
 
     public func run(

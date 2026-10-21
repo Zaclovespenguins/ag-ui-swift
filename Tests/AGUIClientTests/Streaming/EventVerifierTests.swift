@@ -212,7 +212,441 @@ final class EventVerifierTests: XCTestCase {
         }
     }
 
+    // MARK: - B8: Run lifecycle
+
+    func testLateRunErrorAfterRunFinishedPassesThroughAsFailedRun() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+            RunErrorEvent(message: "late failure", code: "LATE"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 3)
+        XCTAssertTrue(verified[2] is RunErrorEvent)
+    }
+
+    func testEventsAfterLateRunErrorThrowAlreadyErrored() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+            RunErrorEvent(message: "late failure"),
+            TextMessageStartEvent(messageId: "m", role: "assistant"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("already errored") == true)
+    }
+
+    func testSecondRunErrorStillThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            RunErrorEvent(message: "a"),
+            RunErrorEvent(message: "b"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("already errored") == true)
+    }
+
+    func testRunStartedAfterRunErrorReturnsToActive() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            RunErrorEvent(message: "boom"),
+            RunStartedEvent(threadId: "t1", runId: "r2"),
+            TextMessageStartEvent(messageId: "m2", role: "assistant"),
+            TextMessageEndEvent(messageId: "m2"),
+            RunFinishedEvent(threadId: "t1", runId: "r2"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 6)
+    }
+
+    func testRunErrorEndsOpenItemsSoNextRunStartsClean() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            TextMessageStartEvent(messageId: "m", role: "assistant"),
+            ToolCallStartEvent(toolCallId: "tc", toolCallName: "f"),
+            StepStartedEvent(stepName: "s"),
+            ReasoningStartEvent(messageId: "r"),
+            RunErrorEvent(message: "boom"),
+            RunStartedEvent(threadId: "t1", runId: "r2"),
+            TextMessageStartEvent(messageId: "m", role: "assistant"),
+            TextMessageEndEvent(messageId: "m"),
+            RunFinishedEvent(threadId: "t1", runId: "r2"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 10)
+    }
+
+    func testRunStartedWithoutFinishResetsPerRunTracking() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            TextMessageStartEvent(messageId: "m", role: "assistant"),
+            RunStartedEvent(threadId: "t1", runId: "r2"),
+            TextMessageStartEvent(messageId: "m", role: "assistant"),
+            TextMessageEndEvent(messageId: "m"),
+            RunFinishedEvent(threadId: "t1", runId: "r2"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 6)
+    }
+
+    func testProducerRunErrorIsEventButConsumerRejectionIsProtocolError() async throws {
+        // A producer RUN_ERROR is delivered as an event, never thrown.
+        let ok: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            RunErrorEvent(message: "producer says no", code: "X"),
+        ]
+        let verified = try await collectEvents(ok.asyncStream.verifyEvents())
+        XCTAssertEqual((verified[1] as? RunErrorEvent)?.code, "X")
+
+        // A rejected stream throws AGUIProtocolError and yields no RunErrorEvent.
+        let bad: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            TextMessageContentEvent(messageId: "x", delta: "d"),
+        ]
+        var seen: [any AGUIEvent] = []
+        do {
+            for try await event in bad.asyncStream.verifyEvents() { seen.append(event) }
+            XCTFail("expected throw")
+        } catch is AGUIProtocolError {
+            XCTAssertFalse(seen.contains { $0 is RunErrorEvent })
+        }
+    }
+
+}
+
+extension EventVerifierTests {
+
+    // MARK: - B8: Reasoning
+
+    func testValidReasoningSequencePasses() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningStartEvent(messageId: "r1"),
+            ReasoningMessageStartEvent(messageId: "rm1"),
+            ReasoningMessageContentEvent(messageId: "rm1", delta: "think"),
+            ReasoningMessageEndEvent(messageId: "rm1"),
+            ReasoningEndEvent(messageId: "r1"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 7)
+    }
+
+    func testDuplicateOpenReasoningSpanThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningStartEvent(messageId: "r1"),
+            ReasoningStartEvent(messageId: "r1"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("already in progress") == true)
+    }
+
+    func testReasoningEndWithoutStartThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningEndEvent(messageId: "nope"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("No active reasoning") == true)
+    }
+
+    func testReasoningEndMatchesByMessageId() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningStartEvent(messageId: "a"),
+            ReasoningEndEvent(messageId: "b"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("'b'") == true)
+    }
+
+    func testRunFinishedWithOpenReasoningSpanThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningStartEvent(messageId: "r1"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("reasoning") == true)
+    }
+
+    func testRunFinishedWithOpenReasoningMessageThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningMessageStartEvent(messageId: "rm"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("reasoning") == true)
+    }
+
+    func testReasoningMessageContentWithoutStartThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningMessageContentEvent(messageId: "rm", delta: "x"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("No active reasoning message") == true)
+    }
+
+    func testDuplicateReasoningMessageStartThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningMessageStartEvent(messageId: "rm"),
+            ReasoningMessageStartEvent(messageId: "rm"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("already in progress") == true)
+    }
+
+    func testReasoningMessageEndWithoutStartThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningMessageEndEvent(messageId: "rm"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("No active reasoning message") == true)
+    }
+
+    func testReasoningChunkWithoutMessageIdFirstThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningMessageChunkEvent(delta: "x"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("messageId") == true)
+    }
+
+    func testReasoningChunkContinuationWithoutIdPasses() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ReasoningMessageChunkEvent(messageId: "rm", delta: "a"),
+            ReasoningMessageChunkEvent(delta: "b"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 4)
+    }
+
+    // MARK: - B8: Chunks
+
+    func testTextChunkFirstWithoutMessageIdThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            TextMessageChunkEvent(delta: "x"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("messageId") == true)
+    }
+
+    func testTextChunkContinuationWithConflictingRoleThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            TextMessageChunkEvent(messageId: "m", role: "assistant", delta: "a"),
+            TextMessageChunkEvent(messageId: "m", role: "user", delta: "b"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("role") == true)
+    }
+
+    func testTextChunkContinuationRepeatingSameRolePasses() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            TextMessageChunkEvent(messageId: "m", role: "assistant", delta: "a"),
+            TextMessageChunkEvent(messageId: "m", role: "assistant", delta: "b"),
+            TextMessageChunkEvent(delta: "c"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 5)
+    }
+
+    func testToolChunkFirstMissingNameThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ToolCallChunkEvent(toolCallId: "tc", delta: "{}"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("toolCallName") == true)
+    }
+
+    func testToolChunkFirstMissingIdThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ToolCallChunkEvent(toolCallName: "f", delta: "{}"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("toolCallId") == true)
+    }
+
+    func testToolChunkContinuationWithConflictingNameThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ToolCallChunkEvent(toolCallId: "tc", toolCallName: "f", delta: "{"),
+            ToolCallChunkEvent(toolCallId: "tc", toolCallName: "g", delta: "}"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("toolCallName") == true)
+    }
+
+    func testToolChunkContinuationWithConflictingParentThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ToolCallChunkEvent(toolCallId: "tc", toolCallName: "f", parentMessageId: "p1"),
+            ToolCallChunkEvent(toolCallId: "tc", delta: "}", parentMessageId: "p2"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("parentMessageId") == true)
+    }
+
+    func testToolChunkSequencePasses() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ToolCallChunkEvent(toolCallId: "tc", toolCallName: "f", delta: "{"),
+            ToolCallChunkEvent(toolCallId: "tc", toolCallName: "f", delta: "}"),
+            ToolCallChunkEvent(delta: ""),
+            ToolCallEndEvent(toolCallId: "tc"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 6)
+    }
+
+    func testOpenChunkItemsAreClosedByRunFinished() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            TextMessageChunkEvent(messageId: "m", role: "assistant", delta: "a"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 3)
+    }
+
+    // MARK: - B8: Reopening closed items
+
+    func testClosedTextMessageMayReopenWithSameRole() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            TextMessageStartEvent(messageId: "m", role: "assistant"),
+            TextMessageEndEvent(messageId: "m"),
+            TextMessageStartEvent(messageId: "m", role: "assistant"),
+            TextMessageContentEvent(messageId: "m", delta: "more"),
+            TextMessageEndEvent(messageId: "m"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 7)
+    }
+
+    func testClosedTextMessageReopenWithDifferentRoleThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            TextMessageStartEvent(messageId: "m", role: "assistant"),
+            TextMessageEndEvent(messageId: "m"),
+            TextMessageStartEvent(messageId: "m", role: "user"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("role") == true)
+    }
+
+    func testClosedToolCallMayReopenWithSameName() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ToolCallStartEvent(toolCallId: "tc", toolCallName: "f"),
+            ToolCallEndEvent(toolCallId: "tc"),
+            ToolCallStartEvent(toolCallId: "tc", toolCallName: "f"),
+            ToolCallEndEvent(toolCallId: "tc"),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 6)
+    }
+
+    func testClosedToolCallReopenWithDifferentNameThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ToolCallStartEvent(toolCallId: "tc", toolCallName: "f"),
+            ToolCallEndEvent(toolCallId: "tc"),
+            ToolCallStartEvent(toolCallId: "tc", toolCallName: "g"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("toolCallName") == true)
+    }
+
+    func testToolCallArgsAfterEndThrows() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ToolCallStartEvent(toolCallId: "tc", toolCallName: "f"),
+            ToolCallEndEvent(toolCallId: "tc"),
+            ToolCallArgsEvent(toolCallId: "tc", delta: "{}"),
+        ]
+        let error = await protocolError(events)
+        XCTAssertTrue(error?.message.contains("No active tool call") == true)
+    }
+
+    // MARK: - B8: Activity
+
+    func testActivityDeltaWithoutSnapshotIsSkippedWithWarning() async throws {
+        let (sink, continuation) = AsyncStream<String>.makeStream()
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ActivityDeltaEvent(messageId: "a1", activityType: "PLAN", patch: Data("[]".utf8)),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let verified = try await collectEvents(
+            events.asyncStream.verifyEvents(onWarning: { continuation.yield($0.message) })
+        )
+        continuation.finish()
+        var warnings: [String] = []
+        for await warning in sink { warnings.append(warning) }
+        XCTAssertEqual(verified.count, 2)
+        XCTAssertFalse(verified.contains { $0 is ActivityDeltaEvent })
+        XCTAssertEqual(warnings.count, 1)
+        XCTAssertTrue(warnings.first?.contains("a1") == true)
+    }
+
+    func testActivityDeltaAfterSnapshotPassesWithoutWarning() async throws {
+        let (sink, continuation) = AsyncStream<String>.makeStream()
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ActivitySnapshotEvent(messageId: "a1", activityType: "PLAN", content: Data("{}".utf8)),
+            ActivityDeltaEvent(messageId: "a1", activityType: "PLAN", patch: Data("[]".utf8)),
+            RunFinishedEvent(threadId: "t1", runId: "r1"),
+        ]
+        let verified = try await collectEvents(
+            events.asyncStream.verifyEvents(onWarning: { continuation.yield($0.message) })
+        )
+        continuation.finish()
+        var warnings: [String] = []
+        for await warning in sink { warnings.append(warning) }
+        XCTAssertEqual(verified.count, 4)
+        XCTAssertTrue(warnings.isEmpty)
+    }
+
+    func testActivityDeltaWithoutSnapshotAndNoHookDoesNotThrow() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ActivityDeltaEvent(messageId: "a1", activityType: "PLAN", patch: Data("[]".utf8)),
+        ]
+        let verified = try await collectEvents(events.asyncStream.verifyEvents())
+        XCTAssertEqual(verified.count, 1)
+    }
+
     // MARK: - Helper Methods
+
+    private func protocolError(_ events: [any AGUIEvent]) async -> AGUIProtocolError? {
+        do {
+            _ = try await collectEvents(events.asyncStream.verifyEvents())
+            XCTFail("Expected AGUIProtocolError to be thrown")
+            return nil
+        } catch let error as AGUIProtocolError {
+            return error
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+            return nil
+        }
+    }
 
     private func collectEvents(
         _ stream: AsyncThrowingStream<any AGUIEvent, Error>
