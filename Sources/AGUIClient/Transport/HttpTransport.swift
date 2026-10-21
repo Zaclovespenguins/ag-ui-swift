@@ -131,7 +131,8 @@ public actor HttpTransport {
         // Encode RunAgentInput to JSON
         let encoder = JSONEncoder()
         do {
-            request.httpBody = try encoder.encode(input)
+            // Activity messages are display-only and MUST NOT be sent (basic/run-input).
+            request.httpBody = try encoder.encode(input.strippingActivityMessages())
         } catch {
             throw ClientError.encodingError(error)
         }
