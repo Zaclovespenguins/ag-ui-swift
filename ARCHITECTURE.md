@@ -1,141 +1,60 @@
 # AGUISwift Architecture
 
-AGUISwift follows a clean, modular architecture with strict Domain-Driven Design (DDD) layering principles:
+AGUISwift is a Swift 5.9 package for iOS 16+ and macOS 13+. It targets AG-UI 1.0; full conformance remains in progress. See the [compatibility guide](docs/COMPATIBILITY.md) for current behavior and migration details.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Your Application                           │
-│              (iOS, macOS, tvOS, watchOS)                      │
-├─────────────────────────────────────────────────────────────┤
-│                  AGUIAgentSDK                                │
-│  ┌─────────────┐  ┌───────────────────┐  ┌──────────────┐  │
-│  │ AgUiAgent  │  │StatefulAgUiAgent  │  │   Builders   │  │
-│  │            │  │                   │  │              │  │
-│  └─────────────┘  └───────────────────┘  └──────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│        AGUIClient              │      AGUITools              │
-│  ┌────────────┐  ┌─────────────┐ │ ┌──────────────────────┐ │
-│  │ HttpAgent  │  │AbstractAgent│ │ │    ToolRegistry      │ │
-│  ├────────────┤  ├─────────────┤ │ ├──────────────────────┤ │
-│  │EventStream │  │EventDecoder │ │ │   ToolExecutor      │ │
-│  │ SseParser  │  │   Manager   │ │ │ToolExecutionManager │ │
-│  └────────────┘  └─────────────┘ │ └──────────────────────┘ │
-├─────────────────────────────────────────────────────────────┤
-│                    AGUICore                                 │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │              Infrastructure Layer                     │  │
-│  │  ┌──────────────────┐  ┌─────────────────────────┐  │  │
-│  │  │  Serialization   │  │      Adapters           │  │  │
-│  │  │ ┌──────────────┐ │  │ ┌─────────────────────┐ │  │  │
-│  │  │ │Serializable  │ │  │ │ValueObjectAdapter   │ │  │  │
-│  │  │ │ThreadId      │ │  │ │                     │ │  │  │
-│  │  │ │Serializable  │ │  │ │                     │ │  │  │
-│  │  │ │RunId         │ │  │ │                     │ │  │  │
-│  │  │ │Serializable  │ │  │ │                     │ │  │  │
-│  │  │ │EventTimestamp│ │  │ │                     │ │  │  │
-│  │  │ └──────────────┘ │  │ └─────────────────────┘ │  │  │
-│  │  └──────────────────┘  └─────────────────────────┘  │  │
-│  ├──────────────────────────────────────────────────────┤  │
-│  │              Protocol Layer                           │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌───────────┐  │  │
-│  │  │ AGUIEvent    │  │ EventType    │  │EventDecoder│  │  │
-│  │  │             │  │              │  │           │  │  │
-│  │  │RunStarted   │  │              │  │           │  │  │
-│  │  │RunFinished  │  │              │  │           │  │  │
-│  │  └──────────────┘  └──────────────┘  └───────────┘  │  │
-│  ├──────────────────────────────────────────────────────┤  │
-│  │              Domain Layer                             │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌───────────┐  │  │
-│  │  │ ValueObjects │  │    Events     │  │  Errors   │  │  │
-│  │  │             │  │              │  │           │  │  │
-│  │  │ ThreadId    │  │ RunStarted   │  │DomainError │  │  │
-│  │  │ RunId       │  │ RunFinished  │  │           │  │  │
-│  │  │EventTimestamp│ │              │  │           │  │  │
-│  │  └──────────────┘  └──────────────┘  └───────────┘  │  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+## Module dependencies
+
+```text
+Your application
+       │
+  AGUIAgentSDK
+   ┌───┼───────┐
+AGUIClient  AGUITools
+   └───┼───────┘
+    AGUICore
 ```
 
-## Module Overview
+`AGUICore` has no module dependencies. `AGUIClient` and `AGUITools` each depend on core; `AGUIAgentSDK` depends on all three. Each library is a separate package product. The only external package dependency is `swift-docc-plugin`.
 
-### AGUICore
-Protocol types, events, and message definitions with strict DDD layering.
+## AGUICore
 
-**Domain Layer** (Pure domain logic, no infrastructure dependencies):
-- **ValueObjects**: `ThreadId`, `RunId`, `EventTimestamp` - Type-safe domain value objects
-- **Events**: Domain event definitions (to be implemented)
-- **Errors**: `DomainError` - Domain validation errors
+Core contains protocol value types, JSON encoding and decoding, domain identifiers, and serialization adapters. Arbitrary JSON fields use raw `Data`.
 
-**Protocol Layer** (Protocol-specific types):
-- **AGUIEvent**: Base protocol for all AG-UI protocol events
-- **EventType**: Enumeration of all AG-UI protocol event types
-- **EventDecoder**: Polymorphic event decoder helper
-- **Concrete Events**: `RunStartedEvent`, `RunFinishedEvent` (and more to come)
+- Events cover run and step lifecycle, text messages, tool calls, state and message snapshots, JSON Patch deltas, activity, reasoning, raw, and custom events: 28 protocol event types plus an internal unknown-event sentinel.
+- `AGUIEventDecoder` dispatches through per-category decoder registries and DTOs. Legacy thinking events translate to reasoning events.
+- Messages support text and media content parts with data, URL, or opaque provider file sources. Tool messages and tool-result events support text or ordered parts.
+- `RunAgentInput` and its builder carry messages, state, tools, context, forwarded properties, resume entries, and an optional protocol version.
+- `RunFinishedOutcome`, `Interrupt`, `ResumeEntry`, and `ResumeValidator` model terminal outcomes and validate interrupt answers.
+- Domain identifiers (`ThreadId`, `RunId`, `EventTimestamp`) remain separate from their serialization wrappers and adapters.
 
-**Infrastructure Layer** (Serialization and adapters):
-- **Serialization**: `SerializableThreadId`, `SerializableRunId`, `SerializableEventTimestamp` - Infrastructure wrappers for JSON serialization
-- **Adapters**: `ValueObjectAdapter` - Converts between domain and infrastructure layers
+## AGUIClient
 
-### AGUIAgentSDK
-High-level APIs for common agent interaction patterns.
-- **AgUiAgent**: Stateless client for cases where no ongoing context is needed
-- **StatefulAgUiAgent**: Stateful client that maintains conversation history
-- **Builders**: Convenient builder patterns for agent configuration
+The client module implements HTTP/SSE transport and custom-agent infrastructure.
 
-### AGUIClient
-Low-level client infrastructure and transport implementations.
-- **HttpAgent**: Low-level HTTP transport implementation
-- **AbstractAgent**: Base class for custom agent implementations
-- **SseParser**: Server-Sent Events parser for streaming responses
-- **EventStreamManager**: Event stream management and processing
+- `HttpAgent` sends run inputs and decodes streamed responses. It rejects present non-SSE content types and streams that end before the final run terminates.
+- `SseParser` handles LF/CRLF framing, comments, and data dispatch. Pre-stream connection retries create fresh requests; interrupted streams are not automatically resumed or retried.
+- Event streams expand chunks, verify lifecycle and message consistency, and apply state and message updates. Reasoning spans and activity snapshot ordering are checked alongside text, tool, and step lifecycles.
+- `AbstractAgent` coordinates runs, state, and subscribers. Producer failures use `AgentRunError`; consumer protocol rejection uses `AGUIProtocolError`. Cancellation has its own subscriber callback.
+- Activity messages are retained for display but stripped at package send boundaries.
 
-### AGUITools
-Tool execution framework for extending agent capabilities.
-- **ToolExecutor**: Protocol for implementing custom tools
-- **ToolRegistry**: Tool registration and management
-- **ToolExecutionManager**: Tool execution with circuit breaker patterns
+## AGUITools
 
-## Design Principles
+The tool framework provides tool registration, executors, execution management, circuit breakers, and error handling. It depends only on protocol types, so it can be used without the HTTP client or high-level SDK.
 
-### Domain-Driven Design (DDD)
-- **Domain Layer**: Pure business logic with no infrastructure dependencies
-- **Infrastructure Layer**: Handles serialization, networking, and external concerns
-- **Clear Boundaries**: Strict separation between domain and infrastructure
-- **Value Objects**: Type-safe domain concepts (ThreadId, RunId, EventTimestamp)
+## AGUIAgentSDK
 
-### Layered Architecture
-- **Application Layer**: High-level APIs (AGUIAgentSDK)
-- **Client Layer**: Low-level transport and infrastructure (AGUIClient)
-- **Domain Layer**: Core business logic and domain models (AGUICore)
-- **Infrastructure Layer**: Technical implementation details (AGUICore)
+- `AgUiAgent` is stateless: callers supply context and the interrupts being answered.
+- `StatefulAgUiAgent` maintains conversation history and pending interrupts per thread, sends history, and validates resume coverage before continuing.
+- `ChatAgent`, configuration builders, and `ConversationHistoryManager` provide higher-level interaction APIs.
+- Both view models expose cancellation through `lastRunWasCancelled` without treating it as `lastError`; a later producer error supersedes cancellation.
+- `ClientToolResponseHandler` exists, but its complete-history continuation and reply forwarding still need work.
 
-### Modularity
-- **AGUICore**: Foundation layer with protocol definitions
-- **AGUIClient**: Low-level client infrastructure and transport
-- **AGUIAgentSDK**: High-level agent APIs and builders
-- **AGUITools**: Tool execution framework
-- Each module can be used independently or together
+## Concurrency and validation
 
-## Current Implementation Status
+The implementation uses async/await, actors for shared mutable state, and explicit main-actor isolation for UI-facing types. Streaming owners retain and cancel background task handles. Diagnostics must not expose credentials or complete user content; verifier diagnostics are debug-only.
 
-### ✅ Completed
-- Domain value objects (ThreadId, RunId, EventTimestamp)
-- Infrastructure serialization wrappers
-- Domain/Infrastructure adapters
-- AGUIEvent protocol and EventType enum
-- RunStartedEvent and RunFinishedEvent implementations
-- Comprehensive unit tests for events
-- DDD layering structure
+Tests are organized by module under `Tests/`. They cover decoding, encoding, verification, transport, tools, history, interrupts, and cancellation with mocked external dependencies. Reference SDK fixtures and a request-schema validator supplement Swift round trips. See [validation instructions](docs/COMPATIBILITY.md#validation).
 
-### 🚧 In Progress
-- Additional event types (TextMessage, ToolCall, StateManagement events)
-- Client agent implementations
-- Tool execution framework
+## Remaining protocol work
 
-### 📋 Planned
-- HTTP transport layer
-- SSE (Server-Sent Events) parser
-- State management
-- Authentication support
-- Error handling and recovery
-
+Subagent events and attribution, protocol version negotiation, token usage, complete metadata propagation/merge semantics, capability models, and a unified processing/warning pipeline remain open. Unknown-event and unknown-outcome behavior still need conformance decisions. HTTP/Protobuf is deferred. The [conformance plan](plans/IMPLEMENTATION_PLAN.md) tracks these separately from implemented features.

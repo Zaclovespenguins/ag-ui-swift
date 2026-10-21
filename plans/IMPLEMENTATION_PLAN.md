@@ -10,8 +10,8 @@
 | Spec target | AG-UI **1.0**, frozen: `docs/spec/1.0/` in [ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui) |
 | Upstream snapshot | `main` @ `b959aa6` (2026-10-20) |
 | Draft (1.1) | `docs/spec/draft/changelog.mdx` lists no changes yet. Re-check before each release. |
-| Repo snapshot | `feature/interrupt-resume` @ `4337612`, plus uncommitted B10 work in the tree |
-| Validation at snapshot | `swift build` passes; `swift test` reports "All tests passed". Not run: `swiftlint`, iOS/macOS `xcodebuild`. |
+| Repo snapshot | B4–B13 integration through `06faa79`, October 21, 2026; see the integration handoff |
+| Validation at snapshot | Integration build, 1,584 tests, iOS simulator build, and representative reference-schema checks passed. Scoped SwiftLint failed; see the handoff for counts and limitations. |
 
 **Sources of truth, in order:** `1.0/schema.json` (structure), the normative pages under `1.0/` (behavior), then `1.0/changelog.mdx` (summary). Upstream *release notes* and the `docs.ag-ui.com/concepts/*` pages are integration changelogs and explainers, not the spec. Where they disagree with `1.0/`, `1.0/` wins. (Example: the concepts page says a partial resume yields `RunError`; the 1.0 pattern page makes coverage the *consumer's* rule.)
 
@@ -21,18 +21,18 @@
 
 ## A. Covered today
 
-Verified in code unless marked. "WIP" means present in the working tree but not committed.
+Verified in code unless marked. The baseline and integration work described here are committed.
 
 | # | Area | Evidence |
 |---|---|---|
 | A1 | **28 of 31 event types** (every 1.0 `EventType` except the three `SUBAGENT_*`): lifecycle, text, tool call, state, activity, reasoning, raw, custom | `Sources/AGUICore/EventType.swift` |
-| A2 | **Reasoning replaces thinking**, including `REASONING_ENCRYPTED_VALUE`. Legacy `THINKING_*` wire events are remapped to `REASONING_*` at decode (the translate-don't-drop rule, `basic/versioning`) | `AGUIEventDecoder.swift:114` |
+| A2 | **Reasoning replaces thinking**, including `REASONING_ENCRYPTED_VALUE`. Legacy `THINKING_*` wire events are remapped to `REASONING_*` at decode (the translate-don't-drop rule, `basic/versioning`) | `AGUIEventDecoder.swift` |
 | A3 | **Run outcome**: `.success(pendingToolCallIds:)`, `.interrupt([Interrupt])`, `.cancelled`; absent outcome means success; malformed interrupt outcome fails decode | `RunFinishedOutcome.swift`, `20b36c0` |
 | A4 | **Interrupt / ResumeEntry / `RunAgentInput.resume`** (omitted from the wire when nil); builder `resume(_:)` | `20b36c0` |
 | A5 | **Activity** snapshot and delta events and `ActivityMessage` | `Events/ActivityEvents/` |
 | A6 | **Chunk transformer, state manager and patch applicator, subscribers, tool registry/executor, circuit breaker, SSE parser/transport** | Kotlin-parity work, now on `main` |
 | A7 | **Basic stream verifier**: first event, run lifecycle, balanced messages/tool calls/steps, multi-run reset | `EventVerifier.swift` (gaps in B8) |
-| A8 | **SDK interrupt flow.** `StatefulAgUiAgent` tracks pending interrupts per thread, `resume(threadId:entries:)`, `InterruptError` (unknown ids, expired interrupts answered with anything but `.cancelled`), `sendMessage` throws while any are pending; `resume` passthrough in `AbstractAgent`/`RunAgentParameters`/`EventStream`. Committed in `205d780`. | `git status`; tests in `StatefulAgUiAgentInterruptTests`, `RunAgentParametersResumeTests` |
+| A8 | **SDK interrupt flow.** `StatefulAgUiAgent` tracks pending interrupts per thread, `resume(threadId:entries:)`, `InterruptError` (unknown ids, expired interrupts answered with anything but `.cancelled`), `sendMessage` throws while any are pending; `resume` passthrough in `AbstractAgent`/`RunAgentParameters`/`EventStream`. Committed in `205d780`. | Tests in `StatefulAgUiAgentInterruptTests`, `RunAgentParametersResumeTests` |
 
 ---
 
@@ -49,16 +49,11 @@ Verified in code unless marked. "WIP" means present in the working tree but not 
 - Also unresolved: a legacy *string* outcome (such as `"completed"`) is a known field carrying a value the schema rejects, so it is arguably malformed and fatal rather than `.unknown`.
 - **Decision:** (a) follow the spec: strip to absent and warn; or (b) keep `.unknown` as a documented, deliberate deviation recorded in a decision record. Recommend (a) unless a consumer needs to see it.
 
-### B3. Content parts changed shape on the wire (P0, breaking)
-`basic/run-input`, `schema.json` (`ContentPart`, `PartSource`). Swift's `ImageInputContent` etc. are **flat** (`url`, `data`, `detail`, `mimeType` beside `type`). 1.0 parts carry `source`, a discriminated union: `data` (`value`, required `mimeType`), `url` (`value`, optional `mimeType`), or `file` (`value`, optional `provider`/`mimeType`). Consequences:
-- Messages we **send** in the flat shape may be rejected by 1.0 producers; messages we **receive** in the 1.0 shape fail to decode.
-- `file` source is new in 1.0; it is opaque: **MUST NOT** be fetched or parsed.
-- Every part gains optional `id`; the text part gains `metadata`.
-- Type renames (`InputContent`→`ContentPart`, `TextInputContent`→`TextPart`, `PartSource`, `DataSource`, `UrlSource`); the wire `type` values are unchanged. Keep the old names as `typealias`es.
-- `binary` is retired: translate it (to a `data`/`url` part by its fields) with a warning rather than drop it. Python marks `BinaryInputContent` deprecated. Audio is **not** retired.
-- A consumer that cannot use a part **MUST NOT** fail the run.
-- Tests first: round-trip each part kind; decode fixtures from `@ag-ui/encoder`; validate encoded output against `schema.json` (C8); legacy flat/binary input is translated, with a warning.
-- Files: `Types/InputContent/*`, `Decoding/InputContentDTO/*`, `Decoding/MessageDTO/UserMessageDTO`, `Encoding/MessageEncoder.swift`, `Examples/` call sites if any. **Semver:** major bump of the 0.x API surface.
+### B3. Content parts changed shape on the wire (P0, implemented)
+`basic/run-input`, `schema.json` (`ContentPart`, `PartSource`). The previous `ImageInputContent` wire shapes were **flat** (`url`, `data`, `detail`, `mimeType` beside `type`). 1.0 parts carry `source`, a discriminated union: `data` (`value`, required `mimeType`), `url` (`value`, optional `mimeType`), or `file` (`value`, optional `provider`/`mimeType`). Current implementation:
+- `ContentPart`, `TextPart`, media parts, and `PartSource` implement the nested shape, including opaque file sources and optional IDs/metadata.
+- Legacy input-content names remain aliases; flat/binary inputs translate to current parts. Legacy image assertions were corrected during integration.
+- See [migration guidance](../docs/COMPATIBILITY.md#content-parts-and-tool-results). Automatic warning routing and broader conformance coverage remain C7/C8.
 
 ### B4. Tool results carry parts (P1, integrated)
 `ToolResultContent` represents text or ordered content parts on `ToolMessage` and `ToolCallResultEvent`. Empty parts still answer the call. String initializers remain available; `ToolCallResultEvent.content` is now `String?`, and `resultContent` exposes either shape. Flattening joins text with newlines, drops other parts without placeholders, and returns warnings for the caller to surface. Automatic warning routing remains C7.
@@ -101,7 +96,7 @@ Integration details, validation commands, compatibility notes, and remaining lim
 
 ---
 
-## C. Not started
+## C. Remaining work and partial implementations
 
 ### C1. Subagents (P0 for decode, P1 for rules)
 `events/subagents`, `schema.json` (`SubagentStarted/Finished/ErrorEvent`, `SubagentInfo`, `SubagentFinishedOutcome`, `Attributable`).
@@ -114,7 +109,7 @@ Integration details, validation commands, compatibility notes, and remaining lim
 
 ### C2. Protocol version negotiation (P0)
 `basic/versioning#version-negotiation`, `basic/run-input#protocolversion`.
-- `RunAgentInput.protocolVersion: String?` and `RunStartedEvent.protocolVersion: String?`. A 1.0 consumer **MUST** send `"1.0"` (omit only when the peer is known to predate the field). The format is `MAJOR.MINOR`, compared numerically per component (`1.10` > `1.9`).
+- `RunAgentInput.protocolVersion: String?` is implemented; `RunStartedEvent.protocolVersion: String?` remains open. A 1.0 consumer **MUST** send `"1.0"` (omit only when the peer is known to predate the field). The format is `MAJOR.MINOR`, compared numerically per component (`1.10` > `1.9`).
 - A consumer meeting a newer or uninterpretable producer version proceeds and **SHOULD** warn.
 - A configuration switch to omit the field for known-old servers. Keep the default on.
 - Tests: encode includes it; decode of `RUN_STARTED` with and without it; numeric comparison; warning on a newer version.
@@ -134,8 +129,8 @@ Integration details, validation commands, compatibility notes, and remaining lim
 ### C7. Processing pipeline and warnings (P0, design)
 `basic/processing`. Make the ordering explicit and testable on every path that produces events: **middleware (retired-shape translation) → expansion of chunks → enforcement (drop unknown, strip unknown members, fail on malformed) → verification → application code**. Both transports must reach the same verdict. Needs a warning channel: there is no logging framework (AGENTS.md), and warnings **MUST NOT** be silenced by default (`basic/versioning`). **Decision:** a warning callback/`AsyncStream` on the client configuration versus adopting a logger; this is a separate decision per AGENTS.md. Retired shapes (`THINKING_*`, binary content, the `subAgents` capability key, which is *not* read) go in a registry with their replacements.
 
-### C8. Conformance harness (P0, first)
-AGENTS.md already requires checking against the reference SDK. Make it mechanical:
+### C8. Conformance harness (P0, partially implemented)
+`ReferenceSDKWireTests` now decodes encoder 1.0.3 fixtures and exports three requests; `scripts/validate-wire-reference.cjs` validates them against core schemas and the pinned JSON Schema. These representative checks passed during integration. Remaining work:
 - Vendor `1.0/schema.json` (pinned to the upstream SHA above) under `Tests/.../Fixtures/`.
 - Fixtures of events and inputs produced by `@ag-ui/encoder`, decoded in tests.
 - Validate what the package **sends** (`RunAgentInput` incl. messages and content parts) against the schema. The package takes no JSON Schema dependency (only `swift-docc-plugin`), so run validation from a script under `scripts/` plus a CI step, or keep a small in-test checker. **Decision.**
@@ -144,10 +139,10 @@ AGENTS.md already requires checking against the reference SDK. Make it mechanica
 ### C9. Optional: HTTP + Protobuf binding (P3)
 `basic/transports/http-protobuf`: negotiated by media type, 4-byte length-prefixed frames, same verdicts as JSON. Needs a protobuf dependency, so it needs a decision record first. Not required for 1.0 conformance of an SSE client *(verify the "all implementations MUST" scope in `basic/index`)*.
 
-### C10. Docs and housekeeping (P2)
-- State the supported spec version (1.0) in `README.md` and `ARCHITECTURE.md`; migration notes for B3 and B2.
-- `AGENTS.md` "Known gaps" after each phase; keep `IMPLEMENTATION_PLAN.md` references in `AGENTS.md` pointing at `plans/`.
-- Working tree hygiene (not part of this plan's code): the tree currently shows large uncommitted deletions (`Examples/ChatApp/`, `plans/*.md`, article drafts) alongside the interrupt WIP. Split commits so the interrupt work and the deletions are separate.
+### C10. Docs and housekeeping (P2, documentation refreshed)
+- README, architecture, and compatibility/migration documentation now describe the implemented features and remaining gaps.
+- Historical handoffs retain their original context. Earlier working-tree deletion and WIP notes describe the pre-integration baseline, not current outstanding work.
+- Continue updating this plan and `AGENTS.md` after each implementation phase.
 
 ---
 
@@ -169,7 +164,7 @@ Every phase is test-first on a feature branch from an up-to-date `main`, with `s
 
 1. **B1:** change the default for unknown events, or keep `.throwError` opt-in and force the SDK layer to tolerate?
 2. **B2:** follow the spec (strip unknown outcomes to absent, warn) or keep `.unknown(type:)` as a recorded deviation? Legacy string outcomes: fatal or unknown?
-3. **B3:** accept a breaking release for the content-part wire change?
+3. **B3:** implementation landed; choose release/versioning policy for the content-part API and wire changes.
 4. ~~**B10:** where does resume coverage live?~~ Resolved: `ResumeValidator` in AGUICore; `AgUiAgent` takes `answering:` (see B10).
 5. **C7:** warning mechanism (callback/stream on config, or add a logger as its own decision).
 6. **C8:** schema validation via script and CI, or an in-test checker.

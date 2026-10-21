@@ -99,6 +99,7 @@ docs/*
 !docs/README.md
 !docs/.nojekyll
 !docs/WORKFLOW.md
+!docs/COMPATIBILITY.md
 
 # SwiftLint
 .swiftlintcache

@@ -25,7 +25,7 @@ Method: every `$defs` entry for messages, `ToolCall`/`FunctionCall`, `Tool`, `Co
 
 ## Deferred: confirmed, not fixed (not small or not clearly owned)
 
-1. `RunStartedEvent` has no `protocolVersion`; `RunAgentInput` has no `protocolVersion`. Both are optional strings in the schema.
+1. `RunAgentInput.protocolVersion` and its builder setter are implemented by B7. `RunStartedEvent.protocolVersion`, version negotiation, and the outgoing default remain C2.
 2. `RunFinishedEvent` and `RunErrorEvent` have no `usage` (`array<TokenUsage>`), and there is no `TokenUsage` type.
 3. `Tool.parameters` is required on decode, but the schema requires only `name` and `description`. A tool without `parameters` fails to decode. Fixing it needs a decision on the in-memory default.
 4. `TextMessageStartEvent.role` and `TextMessageChunkEvent.role` are free-form strings. The schema restricts them to `TextMessageRole` (developer, system, assistant, user), which excludes `tool`. The Swift types accept `"tool"`. Tightening is a source-breaking change to a public `String` property.

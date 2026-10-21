@@ -15,7 +15,7 @@ High-level APIs for common agent interaction patterns.
 - **StatefulAgUiAgent**: Stateful client that maintains conversation history and sends it with each request
 - **Builders**: Convenient builder patterns for agent configuration
 
-#### Interrupts (draft protocol feature)
+#### Interrupts and resume
 When a run ends with a `RUN_FINISHED` interrupt outcome, `StatefulAgUiAgent` records the interrupts for that thread. Read them with `pendingInterrupts(for:)`, then continue with `resume(threadId:entries:)`, passing one `ResumeEntry` per interrupt. Until then `sendMessage` and `chat` throw `InterruptError`, as does `resume` if the entries skip an interrupt, name an unknown one, or answer an expired one with anything but `.cancelled`. `AgUiAgent` keeps no history: pass the interrupts from the `RUN_FINISHED` outcome as `answering:` along with `resume:`, and `sendMessage` checks them with `ResumeValidator` before making a request. A `RUN_FINISHED` event that cannot be decoded now fails the stream with `ClientError.decodingError` instead of being skipped.
 
 ### AGUIClient
@@ -41,13 +41,15 @@ Tool execution framework for extending agent capabilities.
 ## Requirements
 
 - Swift 5.9+
-- iOS 15.0+ / macOS 13.0+
+- iOS 16.0+ / macOS 13.0+
 
 ## Documentation
 
 API documentation is automatically generated and published to [GitHub Pages](https://paduh.github.io/ag-ui-swift/).
 
-For local documentation generation, see the [Documentation README](docs/README.md).
+See the [compatibility and migration guide](docs/COMPATIBILITY.md) for implemented protocol behavior, source and wire changes, validation, and remaining gaps. The [architecture guide](ARCHITECTURE.md) describes module responsibilities; the [conformance plan](plans/IMPLEMENTATION_PLAN.md) tracks remaining work.
+
+The package targets AG-UI 1.0, with 28 protocol event types implemented. Full 1.0 conformance is still in progress, including subagents and protocol version negotiation.
 
 ### Local Testing Setup
 

@@ -17,7 +17,7 @@ Modules, lowest to highest (see `ARCHITECTURE.md`):
 - `Sources/AGUITools/` (depends on AGUICore): tool registry, executor, and error handling.
 - `Sources/AGUIAgentSDK/` (depends on all three): `AgUiAgent`, `StatefulAgUiAgent`, `ChatAgent`, conversation history, and builders.
 - `Tests/<Module>Tests/`: XCTest suites per module. Shared decoder helpers and fixtures are in `Tests/AGUICoreTests/Helpers/`; mocks such as `MockHTTPClient` and `MockToolRegistry` live beside the tests that use them.
-- `plans/` and `IMPLEMENTATION_PLAN.md`: parity and implementation plans. `docs/WORKFLOW.md` and `CONTRIBUTING.md`: the git workflow.
+- `plans/IMPLEMENTATION_PLAN.md` and `plans/B12_SCHEMA_DIFF.md`: parity and implementation plans. `docs/WORKFLOW.md` and `CONTRIBUTING.md`: the git workflow.
 
 ## Working conventions
 - **Test-driven development is required.** Write failing tests first, confirm they fail for the expected reason, then implement. Cover edge cases and error paths, and mock external dependencies (network, LLM providers).
@@ -49,5 +49,7 @@ Modules, lowest to highest (see `ARCHITECTURE.md`):
 - Report what was validated and any checks that could not run.
 
 ## Known gaps
-- Interrupt/resume (draft spec): `StatefulAgUiAgent` tracks pending interrupts per thread and answers them with `resume(threadId:entries:)`; `sendMessage` throws `InterruptError` while any are pending. `AgUiAgent.sendMessage` keeps no history, so the caller passes the interrupts being answered as `answering:` and `resume` is checked against them with `ResumeValidator` (AGUICore). `HttpAgent`, `AbstractAgent`, and `run(input:)` don't validate `resume`; the caller owns coverage there.
+- Interrupt/resume (AG-UI 1.0 target): `StatefulAgUiAgent` tracks pending interrupts per thread and answers them with `resume(threadId:entries:)`; `sendMessage` throws `InterruptError` while any are pending. `AgUiAgent.sendMessage` keeps no history, so the caller passes the interrupts being answered as `answering:` and `resume` is checked against them with `ResumeValidator` (AGUICore). `HttpAgent`, `AbstractAgent`, and `run(input:)` don't validate `resume`; the caller owns coverage there.
 - `ClientToolResponseHandler` should send the full history and a fresh `runId`, and pass the agent's reply through instead of discarding it.
+
+- Full AG-UI 1.0 conformance remains in progress: subagents, version negotiation, usage, complete metadata handling, capabilities, and unified unknown-material/warning processing. See `docs/COMPATIBILITY.md` and `plans/IMPLEMENTATION_PLAN.md`.
