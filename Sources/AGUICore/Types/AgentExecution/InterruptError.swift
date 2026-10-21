@@ -18,6 +18,12 @@ public enum InterruptError: Error, Equatable, Sendable {
 
     /// The interrupt's deadline has passed, so it can only be cancelled.
     case expired(id: String)
+
+    /// The resume entries contain more than one entry for the same interrupt.
+    ///
+    /// An interrupt gets exactly one answer, so conflicting or repeated entries are
+    /// rejected rather than guessing which one wins.
+    case duplicateEntries(ids: [String])
 }
 
 extension InterruptError: LocalizedError {
@@ -29,6 +35,8 @@ extension InterruptError: LocalizedError {
             return "Resume references unknown interrupt id(s): \(ids.joined(separator: ", "))"
         case .expired(let id):
             return "Interrupt \(id) has expired and can no longer be answered. Cancel it to continue the thread."
+        case .duplicateEntries(let ids):
+            return "Resume has more than one entry for interrupt id(s): \(ids.joined(separator: ", "))"
         }
     }
 }
@@ -50,7 +58,8 @@ public enum ResumeValidator {
     ///   - pending: The interrupts that ended the previous run
     ///   - now: The time to judge deadlines against
     /// - Throws: ``InterruptError/unansweredInterrupts(ids:)``,
-    ///   ``InterruptError/unknownInterrupts(ids:)`` or ``InterruptError/expired(id:)``
+    ///   ``InterruptError/unknownInterrupts(ids:)``, ``InterruptError/duplicateEntries(ids:)``
+    ///   or ``InterruptError/expired(id:)``
     public static func validate(
         entries: [ResumeEntry],
         pending: [Interrupt],
@@ -70,6 +79,15 @@ public enum ResumeValidator {
         }
         if !unknown.isEmpty {
             throw InterruptError.unknownInterrupts(ids: unknown)
+        }
+
+        var seen = Set<String>()
+        var duplicates: [String] = []
+        for entry in entries where !seen.insert(entry.interruptId).inserted && !duplicates.contains(entry.interruptId) {
+            duplicates.append(entry.interruptId)
+        }
+        if !duplicates.isEmpty {
+            throw InterruptError.duplicateEntries(ids: duplicates)
         }
 
         for interrupt in pending where InterruptExpiry.isExpired(interrupt, now: now) {
