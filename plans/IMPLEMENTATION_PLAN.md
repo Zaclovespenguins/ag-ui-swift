@@ -60,50 +60,44 @@ Verified in code unless marked. "WIP" means present in the working tree but not 
 - Tests first: round-trip each part kind; decode fixtures from `@ag-ui/encoder`; validate encoded output against `schema.json` (C8); legacy flat/binary input is translated, with a warning.
 - Files: `Types/InputContent/*`, `Decoding/InputContentDTO/*`, `Decoding/MessageDTO/UserMessageDTO`, `Encoding/MessageEncoder.swift`, `Examples/` call sites if any. **Semver:** major bump of the 0.x API surface.
 
-### B4. Tool results carry parts (P1)
-`events/tool-calls#result-content`: `TOOL_CALL_RESULT.content` and `ToolMessage.content` are a **string or an ordered `[ContentPart]`**. Both are `String` in Swift, so an array result fails to decode. Depends on B3. Also: a result **MUST still answer the call** even if every part was dropped, and flattening for an old peer **MUST warn** and **MUST NOT** insert placeholders. `TOOL_CALL_RESULT` mints its own message and does not reopen the call.
+### B4. Tool results carry parts (P1, integrated)
+`ToolResultContent` represents text or ordered content parts on `ToolMessage` and `ToolCallResultEvent`. Empty parts still answer the call. String initializers remain available; `ToolCallResultEvent.content` is now `String?`, and `resultContent` exposes either shape. Flattening joins text with newlines, drops other parts without placeholders, and returns warnings for the caller to surface. Automatic warning routing remains C7.
 
-### B5. Silent `as?` casts break "malformed is fatal" (P1)
-`basic/processing`: a known field with a schema-rejected value **MUST** fail the run, never be repaired, coerced or ignored. Decoding has ~84 `as?` casts (for example `object["subagentRunId"] as? String`, `jsonObject["url"] as? String`), each of which turns a wrong-typed value into "absent".
-- One sweep of the DTO layer: absent → nil, present-but-wrong-type → `EventDecodingError`. Tests per DTO for a wrong-typed optional field.
-- Related to the earlier `fix/json-bool-coercion` work; keep that behavior.
+### B5. Strict optional DTO fields (P1, integrated)
+Hand-decoded optional strings, booleans, and string arrays use throwing readers: absence/null reads as nil, while a present wrong type throws. The sweep covers lifecycle, activity, raw-event, user, tool, and reasoning DTO fields. Existing JSON boolean discrimination is retained. This is DTO validation; the stream-wide processing/warning work remains B1/C7.
 
-### B6. "Absent means absent" for `null` (P1)
-`basic/index#absent-means-absent`: producers **MUST** omit empty optionals, never send `null`; a consumer reading an optional set to `null` treats it as omitted. Null *inside* payloads (`state`, `forwardedProps`, patch values, `Metadata` values) is data and **MUST** be preserved. Audit all encoders and decoders for both directions. Also covers `RunAgentInput.state` (`null` ≙ absent ≙ `{}`) and `forwardedProps` (a whole `null` ≙ omitted).
+### B6. "Absent means absent" for `null` (P1, integrated)
+Optional fields are omitted on encode and null optionals are treated as absent on decode. Empty `RunAgentInput.state` is omitted, never emitted as null; absent/null state decodes to `{}`. Null values inside state, forwarded properties, metadata, and resume payload objects are preserved. A whole null `ResumeEntry.payload` remains omitted, matching the pinned schema's `not: {type: null}` rule. A live claude-agent-sdk adapter smoke test has not been run.
 
-### B7. `RunAgentInput` shape (P1/P2)
-`basic/run-input`: `tools` and `context` optional (absent ≙ empty; MAY omit empty), `protocolVersion` field missing (see C2). `state` defaults to `{}` today, which is correct. Activity messages: see B9.
+### B7. `RunAgentInput` shape (P1/P2, integrated)
+Empty `tools` and `context` are omitted and decode as empty when absent/null. `protocolVersion` is available on the input and builder and participates in equality/hash. Its default remains nil; version negotiation, the `"1.0"` send default, and `RunStartedEvent.protocolVersion` remain C2. `forwardedProps` still defaults to and encodes `{}`.
 
-### B8. Stream verifier vs 1.0 lifecycle and patterns (P1)
-Read from `EventVerifier.swift`; each needs a failing test first *(verify)*:
-- **Late `RUN_ERROR` after `RUN_FINISHED` is admitted** (`events/lifecycle`) and **MUST** be treated as a failed run; today everything after `RUN_FINISHED` throws.
-- **`RUN_STARTED` after `RUN_ERROR`** should return to Active; `runError` is never reset, so the next run's events throw.
-- **`RUN_ERROR` ends whatever was open**; per-run tracking resets on any new `RUN_STARTED`, not only after `runFinished`.
-- **Reasoning rules**: spans matched by `messageId`; no duplicate open span; all closed before `RUN_FINISHED`; message start/content/end discipline; chunk first-carry rules. Currently no reasoning cases at all.
-- **Chunk rules** (`basic/patterns/streaming`): first chunk **MUST** carry `messageId` (text/reasoning) or `toolCallId` + `toolCallName`; continuation repeating an opener field with a *different* value is fatal.
-- **Closed items may reopen** if the reopening start agrees with the original; **MUST NOT act on tool args before `TOOL_CALL_END`**.
-- **Subagent rules** (ownership, nesting, "run MUST NOT finish with an active invocation"): arrive with C1.
-- Steps are per-owner once attribution exists.
-- Activity delta without a prior snapshot is skipped with a warning, never fatal (`events/activity`).
-- The "run is failed" surface: a stream the consumer rejects and a `RUN_ERROR` the producer sent **MUST** stay distinguishable to application code.
+### B8. Stream verifier lifecycle and patterns (P1, integrated)
+- Late `RUN_ERROR` after `RUN_FINISHED` passes through; `AbstractAgent.runAgent` reports the producer failure as `AgentRunError`, distinct from `AGUIProtocolError` for consumer rejection.
+- Any new `RUN_STARTED` resets per-run tracking, including after errors. `RUN_ERROR` ends open items.
+- Reasoning spans/messages, first-chunk identifiers, repeated opener fields, and reopening consistency are verified.
+- Activity delta without a prior snapshot is skipped and reported through the warning hook.
+- Subagent ownership/nesting and per-owner steps remain C1.
 
-### B9. Activity messages must not be sent back (P1)
-`basic/run-input`: a consumer **MUST** strip activity messages from `messages` before sending. `MessageEncoder` encodes them and the SDK/client never strips (no activity handling found in `AGUIAgentSDK`/`AGUIClient`). Fix in the input-building path (`RunAgentInputBuilder` / history manager) so every send path is covered. Tests: history with an activity message sends none.
+### B9. Activity messages are stripped before sending (P1, integrated)
+The builder, abstract-agent send path, and HTTP transport strip display-only activity messages while preserving the remaining input fields, including `protocolVersion`. Local history and direct `JSONEncoder` encoding can retain activity messages; every package send boundary strips them. Tests cover raw inputs, builders, SDK history, and transport requests.
 
-### B10. Resume coverage on the non-stateful path (P1, done for send paths)
-`basic/patterns/interrupt-resume`: a consumer **MUST** reject, before sending, a resume list that leaves an interrupt uncovered or resolves an expired one; omission is not abandonment.
-- **Decided:** the check is `ResumeValidator.validate(entries:pending:now:)` in AGUICore (with `InterruptError`), used by `StatefulAgUiAgent.resume` and by `AgUiAgent.sendMessage(_:resume:answering:)`. No lower layer tracks interrupts (`AbstractAgent` keeps messages and state but not run outcomes, and hardcodes `threadId`), so the stateless caller supplies `answering:`. Passing `resume` without it fails as unknown ids.
-- `HttpAgent`, `AbstractAgent.runAgent(parameters:)`, and `run(input:)` do not validate; the caller owns coverage. Revisit if `AbstractAgent` ever tracks outcomes.
-- Still open: a producer-side mismatch (unrecognized entry id) is a warning, not a failure, per the spec; we throw for unknown ids on the consumer side. After `.cancelled` the next run is a normal new run, not a resume.
+### B10. Resume coverage (P1, integrated for send paths)
+`ResumeValidator.validate(entries:pending:now:)` rejects uncovered, unknown, duplicate, and expired resolved entries. Expired interrupts can be cancelled. `StatefulAgUiAgent.resume` and `AgUiAgent.sendMessage(_:resume:answering:)` use it; the stateless caller supplies `answering:`.
+- Duplicate entries and the normal new run following `.cancelled` are covered and resolved.
+- `HttpAgent`, `AbstractAgent.runAgent(parameters:)`, and `run(input:)` still leave interrupt coverage to their caller. The abstract agent records the latest streamed outcome for finalization, not pending interrupts.
+- Producer-side unrecognized-entry warnings are separate from consumer-side rejection of unknown ids; producer warning handling remains open.
 
-### B11. Cancelled outcome surface (P2)
-`events/lifecycle#cancelled-runs`: a consumer **MUST NOT** present a cancelled run as success **or** as an error. Audit `AgentSubscriber`, `StateManager`, `ChatAgent`/view-model, and `ConversationHistoryManager` for code that treats any non-error `RUN_FINISHED` as success. A consumer abandoning a stream **MUST NOT** synthesize a `RUN_FINISHED`.
+### B11. Cancelled outcome surface (P2, integrated)
+`AgentSubscriber.onRunCancelled` has a default no-op implementation. Producer cancellation, local abort, and transport cancellation do not invoke success/failure finalization. Both view models expose `lastRunWasCancelled` and keep cancellation out of `lastError`; a late producer error supersedes the cancelled flag. No `RUN_FINISHED` is synthesized when a consumer abandons a stream. Producer errors now reach failure subscribers and the `runAgent` caller as `AgentRunError`.
 
-### B12. Message and tool-call fields (P2, needs a schema diff)
-Compare every Swift message, `ToolCall`, `Tool`, `Context`, event, and the existing `ResumeEntry`/`Interrupt` against `schema.json` field by field (C8 automates it). Known candidates: `metadata` on messages and events (C4); `Attributable.subagentRunId` on messages and interrupts (C1); `encryptedValue` placement (`ToolMessage`, `ToolCall`, `ReasoningMessage`; `DeveloperMessage` currently has one); `ToolMessage.error` stays alongside content; `TextMessageRole`. Interrupt `reason` and `responseSchema` (object only) per schema.
+### B12. Message and tool-call fields (P2, schema diff completed)
+See [B12_SCHEMA_DIFF.md](B12_SCHEMA_DIFF.md), using upstream schema commit `85a427d0558d0b117191690bad287da299acc91d`. Message encoding preserves `encryptedValue`, omits `ToolMessage.name`, and retains `ToolMessage.error` alongside content. Missing text-start role defaults to assistant. Metadata, attribution, usage, capabilities, `Tool.parameters` defaults, and public role-string tightening remain deferred as listed in the diff.
 
-### B13. Transport (P2)
-`basic/transports/http-sse`: LF framing, ignore SSE fields other than `data`, tolerate comment lines, never infer success from a closed connection, no resumption. `SseParser` also accepts CR/CRLF (permitted for consumers). Confirm the other behaviors with tests; check the `HttpAgent` error path rejects bad input "before `RUN_STARTED`" through the transport error.
+### B13. HTTP/SSE transport (P2, integrated)
+LF/CRLF framing, comments, and data-only dispatch are covered. Mid-stream failures are not retried/resumed; pre-stream connection retries make fresh requests. Both HTTP run entry points reject truncation, including an unfinished final run after replay. A present non-SSE content type is rejected before decoding; a missing header remains tolerated for compatibility. Legacy cursor inspection/explicit header APIs remain available but automatic AG-UI 1.0 streaming does not use `Last-Event-ID`.
+
+Integration details, validation commands, compatibility notes, and remaining limitations are recorded in [the integration handoff](../handoffs/2026-10-21-b4-b13-integration.md).
 
 ---
 

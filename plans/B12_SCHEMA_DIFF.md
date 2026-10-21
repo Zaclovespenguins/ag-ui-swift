@@ -20,8 +20,8 @@ Method: every `$defs` entry for messages, `ToolCall`/`FunctionCall`, `Tool`, `Co
 |------|-------|--------|-------|
 | `metadata` | Missing on every event, every message, and `ToolCall`. Already present on `Tool`, `Interrupt`, and `ResumeEntry` (as `Data?`). | `Metadata` on `BaseEvent`, `BaseMessage`, `ToolMessage`, `ActivityMessage`, `ReasoningMessage`, `ToolCall`, `Tool`, `Interrupt`, `ResumeEntry`, `IdentityCapabilities` | C4 |
 | `subagentRunId` | Only on `Interrupt`. Missing on messages. No `SUBAGENT_STARTED`/`FINISHED`/`ERROR` events (`SubagentStartedEvent` etc.) or `SubagentFinishedOutcome`. | `Attributable.subagentRunId` on messages and interrupts; three subagent events | C1 |
-| Content-part and tool-result shape | `ToolMessage.content` is `String?`. `ToolCallResultEvent.content` is `String`. | `oneOf [string, array<ContentPart>]` for both | B3/B4 |
-| Pre-existing test failure | `UserMessageTests.testDecodingMultimodal` fails on the base commit ("Second part should be BinaryInputContent"). | AG-UI 1.0 content parts | B3 |
+| Content-part and tool-result shape | Integrated: `resultContent` represents text or parts on both types; text accessors are optional. | `oneOf [string, array<ContentPart>]` for both | Resolved by B3/B4 |
+| Pre-existing test failure | The stale legacy-image assertion was reproduced and updated in baseline commit `fbab061`; both image tests now pass. | AG-UI 1.0 content parts | Resolved during integration |
 
 ## Deferred: confirmed, not fixed (not small or not clearly owned)
 
