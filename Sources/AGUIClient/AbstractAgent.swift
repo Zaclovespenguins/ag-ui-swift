@@ -64,7 +64,7 @@ public final class AbstractAgent: Sendable {
     // MARK: - Run method
 
     public func run(input: RunAgentInput) -> AsyncThrowingStream<any AGUIEvent, Error> {
-        transport.run(input: input)
+        transport.run(input: input.strippingActivityMessages())
     }
 
     // MARK: - Public pipeline methods

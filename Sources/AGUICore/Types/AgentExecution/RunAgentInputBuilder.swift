@@ -187,6 +187,7 @@ public struct RunAgentInputBuilder {
             throw BuilderError.missingRunId
         }
 
+        // Activity messages are display-only and MUST NOT be sent (basic/run-input).
         return RunAgentInput(
             threadId: threadId,
             runId: runId,
@@ -197,7 +198,7 @@ public struct RunAgentInputBuilder {
             context: _context,
             forwardedProps: _forwardedProps,
             resume: _resume
-        )
+        ).strippingActivityMessages()
     }
 }
 
