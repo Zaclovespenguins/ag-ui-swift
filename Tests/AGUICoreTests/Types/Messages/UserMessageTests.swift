@@ -188,12 +188,9 @@ final class UserMessageTests: XCTestCase {
             XCTFail("First part should be TextInputContent")
         }
 
-        // Verify second part is binary
-        if let binaryPart = userMessage.contentParts?[1] as? BinaryInputContent {
-            XCTAssertEqual(binaryPart.mimeType, "image/jpeg")
-        } else {
-            XCTFail("Second part should be BinaryInputContent")
-        }
+        // Legacy binary image parts are translated to the 1.0 image shape.
+        let imagePart = try XCTUnwrap(userMessage.contentParts?[1] as? ImagePart)
+        XCTAssertEqual(imagePart.source, .url(value: "https://example.com/photo.jpg", mimeType: "image/jpeg"))
     }
 
     func testDecodingMultimodalWithMultipleParts() throws {
@@ -216,6 +213,8 @@ final class UserMessageTests: XCTestCase {
         let userMessage = message as! UserMessage
         XCTAssertEqual(userMessage.contentParts?.count, 3)
         XCTAssertTrue(userMessage.isMultimodal)
+        let imagePart = try XCTUnwrap(userMessage.contentParts?[2] as? ImagePart)
+        XCTAssertEqual(imagePart.source, .url(value: "https://test.com/img.png", mimeType: "image/png"))
     }
 
     func testDecodingFailsWithoutId() {
