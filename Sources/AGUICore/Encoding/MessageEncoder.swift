@@ -279,8 +279,8 @@ private func encodeToolMessage(_ message: any Message, encoder: JSONEncoder) thr
         "role": toolMsg.role.rawValue,
         "toolCallId": toolMsg.toolCallId
     ]
-    if let content = toolMsg.content {
-        dict["content"] = content
+    if let content = toolMsg.resultContent {
+        dict["content"] = ToolResultContentCodec.encode(content)
     }
     // AG-UI 1.0 schema.json: ToolMessage declares no `name` and rejects unknown
     // properties, so `name` is deliberately not sent.

@@ -102,7 +102,7 @@ extension AsyncSequence where Element == any AGUIEvent {
                         case let e as ToolCallResultEvent:
                             let toolMsg = ToolMessage(
                                 id: e.messageId,
-                                content: e.content,
+                                resultContent: e.resultContent,
                                 toolCallId: e.toolCallId
                             )
                             messages.append(toolMsg)

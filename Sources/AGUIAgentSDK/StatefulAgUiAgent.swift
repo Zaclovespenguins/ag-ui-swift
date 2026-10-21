@@ -513,7 +513,7 @@ public final class StatefulAgUiAgent: Sendable {
                             }
                             let toolMessage = ToolMessage(
                                 id: result.messageId,
-                                content: result.content,
+                                resultContent: result.resultContent,
                                 toolCallId: result.toolCallId
                             )
                             await self.historyManager.append(message: toolMessage, to: threadId)

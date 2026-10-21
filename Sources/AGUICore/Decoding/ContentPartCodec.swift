@@ -20,6 +20,10 @@ public enum ContentPartWarning: Sendable, Hashable {
 
     /// A part was dropped because its `source` is unrecognized or cannot be expressed in 1.0.
     case unusableSourceDropped(type: String)
+
+    /// A non-text part was dropped while flattening tool result content to a string for a peer
+    /// that only understands strings. No placeholder is inserted in its place.
+    case partDroppedWhenFlattening(type: String)
 }
 
 /// Decodes and encodes ``ContentPart`` values on the AG-UI 1.0 wire.
