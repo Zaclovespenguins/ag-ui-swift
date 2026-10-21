@@ -123,8 +123,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         parentRunId = try container.decodeIfPresent(String.self, forKey: .parentRunId)
 
         // Decode state as arbitrary JSON object and convert to Data.
-        // The encoder writes `null` when state is an empty `{}` object, so treat
-        // an explicit null here as equivalent to "no state" (empty object).
+        // Absent, `null`, and `{}` all mean "no state" (empty object).
         if container.contains(.state), !(try container.decodeNil(forKey: .state)) {
             let stateContainer = try container.nestedContainer(keyedBy: JSONCodingKeys.self, forKey: .state)
             let stateObject = try stateContainer.decodeJSONObject()
@@ -134,7 +133,8 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         }
 
         // Decode messages array using MessageDecoder for polymorphic deserialization
-        if container.contains(.messages) {
+        // A `null` messages value is read as omitted.
+        if container.contains(.messages), !(try container.decodeNil(forKey: .messages)) {
             var messagesContainer = try container.nestedUnkeyedContainer(forKey: .messages)
             let messagesArray = try messagesContainer.decodeJSONArray()
 
@@ -152,7 +152,8 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         context = try container.decodeIfPresent([Context].self, forKey: .context) ?? []
 
         // Decode forwardedProps as arbitrary JSON object and convert to Data
-        if container.contains(.forwardedProps) {
+        // A whole `null` is read as omitted; `null` values inside the object are data.
+        if container.contains(.forwardedProps), !(try container.decodeNil(forKey: .forwardedProps)) {
             let propsContainer = try container.nestedContainer(keyedBy: JSONCodingKeys.self, forKey: .forwardedProps)
             let propsObject = try propsContainer.decodeJSONObject()
             forwardedProps = try JSONSerialization.data(withJSONObject: propsObject)
@@ -171,13 +172,13 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         try container.encode(runId, forKey: .runId)
         try container.encodeIfPresent(parentRunId, forKey: .parentRunId)
 
-        // Encode state: send null when empty so backends treat it as "no state".
-        // An empty {} object causes some adapters (e.g. claude-agent-sdk) to
-        // spin up unnecessary state-management infrastructure. null is the
-        // correct sentinel for "caller has no state to manage."
+        // Encode state: omit it when empty ("absent means absent"; never send
+        // `null`). An empty {} object causes some adapters (e.g. claude-agent-sdk)
+        // to spin up unnecessary state-management infrastructure, and consumers
+        // read an absent state as {}.
         let stateObject = try JSONSerialization.jsonObject(with: state)
         if let stateDict = stateObject as? [String: Any], stateDict.isEmpty {
-            try container.encodeNil(forKey: .state)
+            // omitted
         } else {
             var stateContainer = container.nestedContainer(keyedBy: JSONCodingKeys.self, forKey: .state)
             try stateContainer.encodeJSONObject(stateObject)
