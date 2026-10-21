@@ -58,10 +58,8 @@ public struct HttpAgentTransport: AgentTransport {
 
                 // Streaming phase. A stream that fails or closes early is never
                 // retried or reported as success.
-                var sawTerminalEvent = false
                 do {
-                    for try await event in EventStream(bytes: bytes, decoder: decoder) {
-                        sawTerminalEvent = event is RunFinishedEvent || event is RunErrorEvent
+                    for try await event in EventStream(bytes: bytes, decoder: decoder, requiresTerminalEvent: true) {
                         continuation.yield(event)
                     }
                 } catch {
@@ -69,13 +67,7 @@ public struct HttpAgentTransport: AgentTransport {
                     return
                 }
 
-                if sawTerminalEvent {
-                    continuation.finish()
-                } else {
-                    continuation.finish(throwing: ClientError.streamError(
-                        "Connection closed before RUN_FINISHED or RUN_ERROR"
-                    ))
-                }
+                continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
         }

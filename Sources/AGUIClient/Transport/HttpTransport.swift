@@ -149,9 +149,9 @@ public actor HttpTransport {
         // any bytes are decoded.
         if let contentType = response.httpResponse.value(forHTTPHeaderField: "Content-Type") {
             let mediaType = contentType
-                .split(separator: ";", maxSplits: 1)[0]
+                .split(separator: ";", maxSplits: 1).first?
                 .trimmingCharacters(in: .whitespaces)
-                .lowercased()
+                .lowercased() ?? ""
             guard mediaType == "text/event-stream" else {
                 throw ClientError.streamError(
                     "Unexpected Content-Type '\(contentType)', expected text/event-stream"

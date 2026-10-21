@@ -13,6 +13,32 @@ import XCTest
 /// `RUN_STARTED` through the transport error.
 final class HttpSseTransportConformanceTests: XCTestCase {
 
+    func testDirectRunRejectsTruncatedStream() async throws {
+        let client = await clientWith(makeResponse(body: "\(started)\n\n"))
+        let stream = try await makeAgent(client: client).run(makeInput())
+        do {
+            for try await _ in stream {}
+            XCTFail("A direct run must reject a truncated response")
+        } catch {
+            guard case ClientError.streamError = error else {
+                return XCTFail("Expected streamError, got \(error)")
+            }
+        }
+    }
+
+    func testReplayWithUnfinishedLastRunIsTruncated() async throws {
+        let body = "\(started)\n\n\(finished)\n\n\(started)\n\n"
+        let result = try await collect(makeAgent(client: await clientWith(makeResponse(body: body))))
+        XCTAssertNotNil(result.error)
+    }
+
+    func testEmptyContentTypeIsRejected() async throws {
+        let response = makeResponse(body: "\(started)\n\n", contentType: "")
+        let result = try await collect(makeAgent(client: await clientWith(response)))
+        XCTAssertNotNil(result.error)
+        XCTAssertTrue(result.types.isEmpty)
+    }
+
     // MARK: - Helpers
 
     private let baseURL = URL(string: "https://agent.example.com")!
