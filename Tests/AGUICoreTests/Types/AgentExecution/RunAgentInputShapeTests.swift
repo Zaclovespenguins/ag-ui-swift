@@ -46,7 +46,7 @@ final class RunAgentInputShapeTests: XCTestCase {
         XCTAssertNil(json["context"])
         XCTAssertNotNil(json["messages"])
         XCTAssertNotNil(json["forwardedProps"])
-        XCTAssertTrue(json.keys.contains("state"))
+        XCTAssertNil(json["state"], "Empty state is omitted, never null")
     }
 
     func testEncodeKeepsNonEmptyToolsAndContext() throws {
