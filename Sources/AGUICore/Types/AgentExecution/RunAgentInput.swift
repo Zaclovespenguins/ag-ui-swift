@@ -66,6 +66,12 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
     /// - Note: Interrupts are a draft extension of the AG-UI protocol.
     public let resume: [ResumeEntry]?
 
+    /// The AG-UI protocol version the sender speaks, in `MAJOR.MINOR` form (for example `"1.0"`).
+    ///
+    /// `nil` omits the field on the wire. Version negotiation and comparison are not
+    /// performed here.
+    public let protocolVersion: String?
+
     /// Creates a new agent input.
     ///
     /// - Parameters:
@@ -78,6 +84,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
     ///   - context: Context items (defaults to empty)
     ///   - forwardedProps: Custom properties as JSON (defaults to empty object)
     ///   - resume: Answers to a previous run's interrupts (defaults to `nil`)
+    ///   - protocolVersion: Protocol version sent to the agent (defaults to `nil`, omitted)
     public init(
         threadId: String,
         runId: String,
@@ -87,7 +94,8 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         tools: [Tool] = [],
         context: [Context] = [],
         forwardedProps: Data = Data("{}".utf8),
-        resume: [ResumeEntry]? = nil
+        resume: [ResumeEntry]? = nil,
+        protocolVersion: String? = nil
     ) {
         self.threadId = threadId
         self.runId = runId
@@ -98,6 +106,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         self.context = context
         self.forwardedProps = forwardedProps
         self.resume = resume
+        self.protocolVersion = protocolVersion
     }
 
     // MARK: - Codable
@@ -112,6 +121,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         case context
         case forwardedProps
         case resume
+        case protocolVersion
     }
 
     public init(from decoder: Decoder) throws {
@@ -161,6 +171,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         }
 
         resume = try container.decodeIfPresent([ResumeEntry].self, forKey: .resume)
+        protocolVersion = try container.decodeIfPresent(String.self, forKey: .protocolVersion)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -195,8 +206,9 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         try messagesContainer.encodeJSONArray(messagesArray)
 
         // Encode tools and context arrays (these already conform to Codable)
-        try container.encode(tools, forKey: .tools)
-        try container.encode(context, forKey: .context)
+        // Empty tools/context are omitted: the schema treats both as optional.
+        if !tools.isEmpty { try container.encode(tools, forKey: .tools) }
+        if !context.isEmpty { try container.encode(context, forKey: .context) }
 
         // Encode forwardedProps as arbitrary JSON object
         let propsObject = try JSONSerialization.jsonObject(with: forwardedProps)
@@ -206,6 +218,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         // Omit resume entirely when unset: the reference schema treats it as
         // optional and rejects an explicit null.
         try container.encodeIfPresent(resume, forKey: .resume)
+        try container.encodeIfPresent(protocolVersion, forKey: .protocolVersion)
     }
 
     // MARK: - Hashable
@@ -219,6 +232,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
         hasher.combine(context)
         hasher.combine(forwardedProps)
         hasher.combine(resume)
+        hasher.combine(protocolVersion)
 
         // Hash each message's identifying properties
         for message in messages {
@@ -238,6 +252,7 @@ public struct RunAgentInput: Sendable, Codable, Hashable {
               lhs.context == rhs.context &&
               lhs.forwardedProps == rhs.forwardedProps &&
               lhs.resume == rhs.resume &&
+              lhs.protocolVersion == rhs.protocolVersion &&
               lhs.messages.count == rhs.messages.count else {
             return false
         }

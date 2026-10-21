@@ -19,6 +19,7 @@ public struct RunAgentInputBuilder {
     private var _context: [Context] = []
     private var _forwardedProps = Data("{}".utf8)
     private var _resume: [ResumeEntry]?
+    private var _protocolVersion: String?
 
     /// Creates a new builder instance.
     public init() {}
@@ -74,6 +75,16 @@ public struct RunAgentInputBuilder {
     public func forwardedProps(_ forwardedProps: Data) -> Self {
         var builder = self
         builder._forwardedProps = forwardedProps
+        return builder
+    }
+
+    /// Sets the AG-UI protocol version sent with the run (for example `"1.0"`).
+    ///
+    /// - Parameter protocolVersion: The version in `MAJOR.MINOR` form
+    /// - Returns: A new builder instance with the protocol version set
+    public func protocolVersion(_ protocolVersion: String) -> Self {
+        var builder = self
+        builder._protocolVersion = protocolVersion
         return builder
     }
 
@@ -196,7 +207,8 @@ public struct RunAgentInputBuilder {
             tools: _tools,
             context: _context,
             forwardedProps: _forwardedProps,
-            resume: _resume
+            resume: _resume,
+            protocolVersion: _protocolVersion
         )
     }
 }

@@ -164,8 +164,9 @@ final class RunAgentInputTests: XCTestCase {
         XCTAssertTrue(json?.contains("\"threadId\"") ?? false)
         XCTAssertTrue(json?.contains("\"runId\"") ?? false)
         XCTAssertTrue(json?.contains("\"messages\"") ?? false)
-        XCTAssertTrue(json?.contains("\"tools\"") ?? false)
-        XCTAssertTrue(json?.contains("\"context\"") ?? false)
+        // Empty tools and context are omitted (basic/run-input: absent == empty).
+        XCTAssertFalse(json?.contains("\"tools\"") ?? true)
+        XCTAssertFalse(json?.contains("\"context\"") ?? true)
     }
 
     func testEncodedStructure() throws {
@@ -185,11 +186,8 @@ final class RunAgentInputTests: XCTestCase {
         let messages = json?["messages"] as? [Any]
         XCTAssertEqual(messages?.count, 0)
 
-        let tools = json?["tools"] as? [Any]
-        XCTAssertEqual(tools?.count, 0)
-
-        let context = json?["context"] as? [Any]
-        XCTAssertEqual(context?.count, 0)
+        XCTAssertNil(json?["tools"])
+        XCTAssertNil(json?["context"])
     }
 
     func testEncodingWithMessages() throws {
