@@ -56,11 +56,11 @@ extension ToolResultContent: ExpressibleByStringLiteral {
 extension ToolResultContent: Hashable {
     public static func == (lhs: ToolResultContent, rhs: ToolResultContent) -> Bool {
         switch (lhs, rhs) {
-        case let (.text(a), .text(b)):
-            return a == b
-        case let (.parts(a), .parts(b)):
-            guard a.count == b.count else { return false }
-            for index in a.indices where erase(a[index]) != erase(b[index]) {
+        case let (.text(left), .text(right)):
+            return left == right
+        case let (.parts(left), .parts(right)):
+            guard left.count == right.count else { return false }
+            for index in left.indices where erase(left[index]) != erase(right[index]) {
                 return false
             }
             return true

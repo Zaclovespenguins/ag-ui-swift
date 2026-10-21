@@ -225,7 +225,12 @@ final class AbsentMeansAbsentTests: XCTestCase {
     }
 
     func test_decodeRunFinished_nullInterruptFields_treatedAsOmitted() throws {
-        let text = #"{"type":"RUN_FINISHED","threadId":"t","runId":"r","outcome":{"type":"interrupt","interrupts":[{"id":"i","reason":"input_required","message":null,"toolCallId":null,"responseSchema":null,"expiresAt":null,"metadata":null,"subagentRunId":null}]}}"#
+        let text = #"""
+        {"type":"RUN_FINISHED","threadId":"t","runId":"r","outcome":{"type":"interrupt","interrupts":[{
+            "id":"i","reason":"input_required","message":null,"toolCallId":null,"responseSchema":null,
+            "expiresAt":null,"metadata":null,"subagentRunId":null
+        }]}}
+        """#
         let event = try XCTUnwrap(try decodeEvent(text) as? RunFinishedEvent)
         guard case .interrupt(let interrupts) = event.outcome else { return XCTFail("expected interrupt") }
         let interrupt = try XCTUnwrap(interrupts.first)

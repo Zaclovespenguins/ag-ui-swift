@@ -305,12 +305,16 @@ final class EventVerifierTests: XCTestCase {
         ]
         var seen: [any AGUIEvent] = []
         do {
-            for try await e in bad.asyncStream.verifyEvents() { seen.append(e) }
+            for try await event in bad.asyncStream.verifyEvents() { seen.append(event) }
             XCTFail("expected throw")
         } catch is AGUIProtocolError {
             XCTAssertFalse(seen.contains { $0 is RunErrorEvent })
         }
     }
+
+}
+
+extension EventVerifierTests {
 
     // MARK: - B8: Reasoning
 
@@ -595,7 +599,7 @@ final class EventVerifierTests: XCTestCase {
         )
         continuation.finish()
         var warnings: [String] = []
-        for await w in sink { warnings.append(w) }
+        for await warning in sink { warnings.append(warning) }
         XCTAssertEqual(verified.count, 2)
         XCTAssertFalse(verified.contains { $0 is ActivityDeltaEvent })
         XCTAssertEqual(warnings.count, 1)
@@ -615,7 +619,7 @@ final class EventVerifierTests: XCTestCase {
         )
         continuation.finish()
         var warnings: [String] = []
-        for await w in sink { warnings.append(w) }
+        for await warning in sink { warnings.append(warning) }
         XCTAssertEqual(verified.count, 4)
         XCTAssertTrue(warnings.isEmpty)
     }

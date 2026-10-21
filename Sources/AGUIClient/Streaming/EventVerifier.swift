@@ -141,73 +141,73 @@ private final class EventVerifier {
         }
 
         switch event {
-        case let e as TextMessageStartEvent:
-            try openText(id: e.messageId, role: e.role, name: nil, fromChunk: false)
-        case let e as TextMessageContentEvent:
-            guard activeMessages[e.messageId] != nil else {
-                throw fail("No active text message found with ID '\(e.messageId)'")
+        case let value as TextMessageStartEvent:
+            try openText(id: value.messageId, role: value.role, name: nil, fromChunk: false)
+        case let value as TextMessageContentEvent:
+            guard activeMessages[value.messageId] != nil else {
+                throw fail("No active text message found with ID '\(value.messageId)'")
             }
-        case let e as TextMessageEndEvent:
-            guard let open = activeMessages.removeValue(forKey: e.messageId) else {
-                throw fail("No active text message found with ID '\(e.messageId)'")
+        case let value as TextMessageEndEvent:
+            guard let open = activeMessages.removeValue(forKey: value.messageId) else {
+                throw fail("No active text message found with ID '\(value.messageId)'")
             }
-            closedMessages[e.messageId] = open
-            if chunkTextId == e.messageId { chunkTextId = nil }
-        case let e as TextMessageChunkEvent:
-            try handleTextChunk(e)
+            closedMessages[value.messageId] = open
+            if chunkTextId == value.messageId { chunkTextId = nil }
+        case let value as TextMessageChunkEvent:
+            try handleTextChunk(value)
 
-        case let e as ToolCallStartEvent:
-            try openTool(id: e.toolCallId, name: e.toolCallName, parent: e.parentMessageId, fromChunk: false)
-        case let e as ToolCallArgsEvent:
-            guard activeToolCalls[e.toolCallId] != nil else {
-                throw fail("No active tool call found with ID '\(e.toolCallId)'")
+        case let value as ToolCallStartEvent:
+            try openTool(id: value.toolCallId, name: value.toolCallName, parent: value.parentMessageId, fromChunk: false)
+        case let value as ToolCallArgsEvent:
+            guard activeToolCalls[value.toolCallId] != nil else {
+                throw fail("No active tool call found with ID '\(value.toolCallId)'")
             }
-        case let e as ToolCallEndEvent:
-            guard let open = activeToolCalls.removeValue(forKey: e.toolCallId) else {
-                throw fail("No active tool call found with ID '\(e.toolCallId)'")
+        case let value as ToolCallEndEvent:
+            guard let open = activeToolCalls.removeValue(forKey: value.toolCallId) else {
+                throw fail("No active tool call found with ID '\(value.toolCallId)'")
             }
-            closedToolCalls[e.toolCallId] = open
-            if chunkToolId == e.toolCallId { chunkToolId = nil }
-        case let e as ToolCallChunkEvent:
-            try handleToolChunk(e)
+            closedToolCalls[value.toolCallId] = open
+            if chunkToolId == value.toolCallId { chunkToolId = nil }
+        case let value as ToolCallChunkEvent:
+            try handleToolChunk(value)
 
-        case let e as StepStartedEvent:
-            activeSteps.insert(e.stepName)
-        case let e as StepFinishedEvent:
-            guard activeSteps.remove(e.stepName) != nil else {
-                throw fail("Cannot send 'STEP_FINISHED' for step '\(e.stepName)' that was not started")
+        case let value as StepStartedEvent:
+            activeSteps.insert(value.stepName)
+        case let value as StepFinishedEvent:
+            guard activeSteps.remove(value.stepName) != nil else {
+                throw fail("Cannot send 'STEP_FINISHED' for step '\(value.stepName)' that was not started")
             }
 
-        case let e as ReasoningStartEvent:
-            guard activeReasoningSpans.insert(e.messageId).inserted else {
-                throw fail("A reasoning span with ID '\(e.messageId)' is already in progress")
+        case let value as ReasoningStartEvent:
+            guard activeReasoningSpans.insert(value.messageId).inserted else {
+                throw fail("A reasoning span with ID '\(value.messageId)' is already in progress")
             }
-        case let e as ReasoningEndEvent:
-            guard activeReasoningSpans.remove(e.messageId) != nil else {
-                throw fail("No active reasoning span found with ID '\(e.messageId)'")
+        case let value as ReasoningEndEvent:
+            guard activeReasoningSpans.remove(value.messageId) != nil else {
+                throw fail("No active reasoning span found with ID '\(value.messageId)'")
             }
-        case let e as ReasoningMessageStartEvent:
-            guard activeReasoningMessages[e.messageId] == nil else {
-                throw fail("A reasoning message with ID '\(e.messageId)' is already in progress")
+        case let value as ReasoningMessageStartEvent:
+            guard activeReasoningMessages[value.messageId] == nil else {
+                throw fail("A reasoning message with ID '\(value.messageId)' is already in progress")
             }
-            activeReasoningMessages[e.messageId] = false
-        case let e as ReasoningMessageContentEvent:
-            guard activeReasoningMessages[e.messageId] != nil else {
-                throw fail("No active reasoning message found with ID '\(e.messageId)'")
+            activeReasoningMessages[value.messageId] = false
+        case let value as ReasoningMessageContentEvent:
+            guard activeReasoningMessages[value.messageId] != nil else {
+                throw fail("No active reasoning message found with ID '\(value.messageId)'")
             }
-        case let e as ReasoningMessageEndEvent:
-            guard activeReasoningMessages.removeValue(forKey: e.messageId) != nil else {
-                throw fail("No active reasoning message found with ID '\(e.messageId)'")
+        case let value as ReasoningMessageEndEvent:
+            guard activeReasoningMessages.removeValue(forKey: value.messageId) != nil else {
+                throw fail("No active reasoning message found with ID '\(value.messageId)'")
             }
-            if chunkReasoningId == e.messageId { chunkReasoningId = nil }
-        case let e as ReasoningMessageChunkEvent:
-            try handleReasoningChunk(e)
+            if chunkReasoningId == value.messageId { chunkReasoningId = nil }
+        case let value as ReasoningMessageChunkEvent:
+            try handleReasoningChunk(value)
 
-        case let e as ActivitySnapshotEvent:
-            activitySnapshots.insert(e.messageId)
-        case let e as ActivityDeltaEvent:
-            guard activitySnapshots.contains(e.messageId) else {
-                warn("Skipped ACTIVITY_DELTA for message '\(e.messageId)': no prior ACTIVITY_SNAPSHOT")
+        case let value as ActivitySnapshotEvent:
+            activitySnapshots.insert(value.messageId)
+        case let value as ActivityDeltaEvent:
+            guard activitySnapshots.contains(value.messageId) else {
+                warn("Skipped ACTIVITY_DELTA for message '\(value.messageId)': no prior ACTIVITY_SNAPSHOT")
                 return false
             }
 
@@ -232,8 +232,8 @@ private final class EventVerifier {
         if activeMessages[id] != nil {
             throw fail("A text message with ID '\(id)' is already in progress")
         }
-        if let closed = closedMessages[id], let r = role, let o = closed.role, r != o {
-            throw fail("Cannot reopen text message '\(id)' with role '\(r)': it was opened with role '\(o)'")
+        if let closed = closedMessages[id], let role = role, let original = closed.role, role != original {
+            throw fail("Cannot reopen text message '\(id)' with role '\(role)': it was opened with role '\(original)'")
         }
         activeMessages[id] = OpenText(role: role, name: name, fromChunk: fromChunk)
     }
@@ -243,11 +243,11 @@ private final class EventVerifier {
             throw fail("The first TEXT_MESSAGE_CHUNK of a message must carry a 'messageId'")
         }
         if var open = activeMessages[id] {
-            if let r = chunk.role, let o = open.role, r != o {
-                throw fail("TEXT_MESSAGE_CHUNK for '\(id)' repeats role '\(r)' but the message has role '\(o)'")
+            if let role = chunk.role, let original = open.role, role != original {
+                throw fail("TEXT_MESSAGE_CHUNK for '\(id)' repeats role '\(role)' but the message has role '\(original)'")
             }
-            if let n = chunk.name, let o = open.name, n != o {
-                throw fail("TEXT_MESSAGE_CHUNK for '\(id)' repeats name '\(n)' but the message has name '\(o)'")
+            if let name = chunk.name, let original = open.name, name != original {
+                throw fail("TEXT_MESSAGE_CHUNK for '\(id)' repeats name '\(name)' but the message has name '\(original)'")
             }
             open.role = open.role ?? chunk.role
             open.name = open.name ?? chunk.name
@@ -279,7 +279,7 @@ private final class EventVerifier {
                     "Cannot reopen tool call '\(id)' with toolCallName '\(name)': it was opened as '\(closed.name)'"
                 )
             }
-            if let p = parent, let o = closed.parentMessageId, p != o {
+            if let parent = parent, let original = closed.parentMessageId, parent != original {
                 throw fail("Cannot reopen tool call '\(id)' with a different parentMessageId")
             }
         }
@@ -291,14 +291,14 @@ private final class EventVerifier {
             throw fail("The first TOOL_CALL_CHUNK of a call must carry 'toolCallId' and 'toolCallName'")
         }
         if var open = activeToolCalls[id] {
-            if let n = chunk.toolCallName, n != open.name {
-                throw fail("TOOL_CALL_CHUNK for '\(id)' repeats toolCallName '\(n)' but the call is '\(open.name)'")
+            if let name = chunk.toolCallName, name != open.name {
+                throw fail("TOOL_CALL_CHUNK for '\(id)' repeats toolCallName '\(name)' but the call is '\(open.name)'")
             }
-            if let p = chunk.parentMessageId {
-                if let o = open.parentMessageId, p != o {
+            if let parent = chunk.parentMessageId {
+                if let original = open.parentMessageId, parent != original {
                     throw fail("TOOL_CALL_CHUNK for '\(id)' repeats a different parentMessageId")
                 }
-                open.parentMessageId = p
+                open.parentMessageId = parent
                 activeToolCalls[id] = open
             }
         } else {

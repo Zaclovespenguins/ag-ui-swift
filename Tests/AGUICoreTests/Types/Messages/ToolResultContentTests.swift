@@ -29,13 +29,13 @@ final class ToolResultContentTests: XCTestCase, AGUIEventDecoderTestHelpers {
     }
 
     func testEqualityAndHashingCompareParts() {
-        let a = ToolResultContent.parts([TextPart(text: "a"), ImagePart(url: "https://x.test/i.png")])
-        let b = ToolResultContent.parts([TextPart(text: "a"), ImagePart(url: "https://x.test/i.png")])
+        let first = ToolResultContent.parts([TextPart(text: "a"), ImagePart(url: "https://x.test/i.png")])
+        let second = ToolResultContent.parts([TextPart(text: "a"), ImagePart(url: "https://x.test/i.png")])
         let reordered = ToolResultContent.parts([ImagePart(url: "https://x.test/i.png"), TextPart(text: "a")])
-        XCTAssertEqual(a, b)
-        XCTAssertEqual(a.hashValue, b.hashValue)
-        XCTAssertNotEqual(a, reordered)
-        XCTAssertNotEqual(a, .text("a"))
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(first.hashValue, second.hashValue)
+        XCTAssertNotEqual(first, reordered)
+        XCTAssertNotEqual(first, .text("a"))
     }
 
     // MARK: - Event decoding
