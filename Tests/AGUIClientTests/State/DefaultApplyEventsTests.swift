@@ -132,6 +132,43 @@ final class DefaultApplyEventsTests: XCTestCase {
         XCTAssertEqual(toolMsg?.content, "Sunny, 22C")
     }
 
+    func testToolCallResultWithPartsMintsOwnMessageAndDoesNotReopenCall() async throws {
+        // Given: a finished tool call, then a result whose content is parts
+        let parts: [any ContentPart] = [TextPart(text: "chart"), ImagePart(url: "https://x.test/c.png")]
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ToolCallStartEvent(toolCallId: "tc1", toolCallName: "plot", parentMessageId: "a1"),
+            ToolCallArgsEvent(toolCallId: "tc1", delta: "{}"),
+            ToolCallEndEvent(toolCallId: "tc1"),
+            ToolCallResultEvent(messageId: "result-msg1", toolCallId: "tc1", resultContent: .parts(parts)),
+        ]
+
+        // When
+        let states = try await collectStates(events.asyncStream.applyEvents(input: makeInput()))
+
+        // Then: assistant call untouched, a separate tool message carries the parts
+        let messages = try XCTUnwrap(states.last(where: { $0.messages != nil })?.messages)
+        let assistant = try XCTUnwrap(messages.first as? AssistantMessage)
+        XCTAssertEqual(assistant.toolCalls?.count, 1)
+        XCTAssertEqual(assistant.toolCalls?.first?.function.arguments, "{}")
+        let toolMsg = try XCTUnwrap(messages.last as? ToolMessage)
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertEqual(toolMsg.id, "result-msg1")
+        XCTAssertEqual(toolMsg.toolCallId, "tc1")
+        XCTAssertEqual(toolMsg.resultContent, .parts(parts))
+    }
+
+    func testToolCallResultWithEveryPartDroppedStillAnswersCall() async throws {
+        let events: [any AGUIEvent] = [
+            RunStartedEvent(threadId: "t1", runId: "r1"),
+            ToolCallResultEvent(messageId: "result-msg1", toolCallId: "tc1", resultContent: .parts([])),
+        ]
+        let states = try await collectStates(events.asyncStream.applyEvents(input: makeInput()))
+        let toolMsg = states.last(where: { $0.messages != nil })?.messages?.last as? ToolMessage
+        XCTAssertEqual(toolMsg?.toolCallId, "tc1")
+        XCTAssertEqual(toolMsg?.resultContent, .parts([]))
+    }
+
     // MARK: - StateSnapshotEvent Tests
 
     func testStateSnapshotEventReplacesState() async throws {

@@ -6,7 +6,7 @@ import Foundation
 struct ToolMessageDTO {
     let id: String
     let toolCallId: String
-    let content: String?
+    let content: ToolResultContent
     let name: String?
     let error: String?
     let encryptedValue: String?
@@ -27,7 +27,12 @@ struct ToolMessageDTO {
         let toolCallId = try MessageDecodingHelpers.extractRequiredString(from: jsonObject, key: "toolCallId")
 
         // Extract optional fields
-        let content = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "content")
+        let content: ToolResultContent
+        if let raw = jsonObject["content"], !(raw is NSNull) {
+            content = try ToolResultContentCodec.decode(raw, path: [ContentKey()])
+        } else {
+            content = .text("")
+        }
         let name = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "name")
         let error = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "error")
         let encryptedValue = MessageDecodingHelpers.extractOptionalString(from: jsonObject, key: "encryptedValue")
@@ -36,6 +41,14 @@ struct ToolMessageDTO {
     }
 
     func toDomain() -> ToolMessage {
-        ToolMessage(id: id, content: content ?? "", toolCallId: toolCallId, name: name, error: error, encryptedValue: encryptedValue)
+        ToolMessage(id: id, resultContent: content, toolCallId: toolCallId, name: name, error: error, encryptedValue: encryptedValue)
     }
+}
+
+private struct ContentKey: CodingKey {
+    var stringValue: String { "content" }
+    var intValue: Int? { nil }
+    init() {}
+    init?(stringValue: String) { nil }
+    init?(intValue: Int) { nil }
 }
