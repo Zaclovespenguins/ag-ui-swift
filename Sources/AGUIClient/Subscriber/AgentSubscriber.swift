@@ -198,11 +198,12 @@ public protocol AgentSubscription: Sendable {
 ///
 /// ## Lifecycle Hooks
 ///
-/// The subscriber provides six optional hooks:
+/// The subscriber provides seven optional hooks:
 ///
 /// - ``onRunInitialized(params:)``: Called when a run starts
 /// - ``onEvent(params:)``: Called for each event in the stream
-/// - ``onRunFinalized(params:)``: Called when a run completes successfully
+/// - ``onRunFinalized(params:)``: Called when a run completes (not cancelled, not failed)
+/// - ``onRunCancelled(params:)``: Called when a run is cancelled
 /// - ``onRunFailed(params:)``: Called when a run fails with an error
 /// - ``onMessagesChanged(params:)``: Called when messages are modified
 /// - ``onStateChanged(params:)``: Called when state is modified
@@ -251,14 +252,31 @@ public protocol AgentSubscriber: Sendable {
     /// - Returns: Optional mutation to apply after failure
     func onRunFailed(params: AgentRunFailureParams) async -> AgentStateMutation?
 
-    /// Called when a run completes successfully.
+    /// Called when a run completes without error and was not cancelled.
     ///
     /// This is called after all events have been processed and the run
-    /// has finished without errors.
+    /// has finished without errors. It is not called for a cancelled run;
+    /// see ``onRunCancelled(params:)``.
     ///
     /// - Parameter params: Common subscriber parameters
     /// - Returns: Optional mutation to apply after completion
     func onRunFinalized(params: AgentSubscriberParams) async -> AgentStateMutation?
+
+    /// Called when a run ends because it was cancelled.
+    ///
+    /// A cancelled run is neither a success nor an error (AG-UI
+    /// `events/lifecycle#cancelled-runs`). It is reported here instead of
+    /// ``onRunFinalized(params:)`` or ``onRunFailed(params:)`` when the stream
+    /// delivers a `RUN_FINISHED` whose outcome is `.cancelled`, or when the
+    /// consumer cancels the run locally (for example with `abortRun()`).
+    ///
+    /// Adding this hook is source compatible: the default implementation does
+    /// nothing, so existing subscribers simply no longer see cancelled runs
+    /// reported as successes.
+    ///
+    /// - Parameter params: Common subscriber parameters
+    /// - Returns: Optional mutation to apply after cancellation
+    func onRunCancelled(params: AgentSubscriberParams) async -> AgentStateMutation?
 
     /// Called for each event in the event stream.
     ///
@@ -299,6 +317,11 @@ extension AgentSubscriber {
 
     /// Default implementation returns no mutation.
     public func onRunFinalized(params: AgentSubscriberParams) async -> AgentStateMutation? {
+        nil
+    }
+
+    /// Default implementation returns no mutation.
+    public func onRunCancelled(params: AgentSubscriberParams) async -> AgentStateMutation? {
         nil
     }
 

@@ -163,4 +163,31 @@ final class AgentViewModelCompatTests: XCTestCase {
         XCTAssertEqual(mock.clearCalls.count, 1)
         XCTAssertEqual(mock.clearCalls[0], "test-thread")
     }
+
+    // MARK: - B11 cancelled runs
+
+    func testCancelledRunIsNeitherErrorNorSuccessFlag() async {
+        mock.eventsToYield = [
+            RunStartedEvent(threadId: "t", runId: "r"),
+            RunFinishedEvent(threadId: "t", runId: "r", outcome: .cancelled),
+        ]
+        await sut.send("hi")
+        XCTAssertTrue(sut.lastRunWasCancelled)
+        XCTAssertNil(sut.lastError)
+        XCTAssertFalse(sut.isRunning)
+    }
+
+    func testCancelledFlagResetsOnNextSend() async {
+        mock.eventsToYield = [RunFinishedEvent(threadId: "t", runId: "r", outcome: .cancelled)]
+        await sut.send("a")
+        mock.eventsToYield = [RunFinishedEvent(threadId: "t", runId: "r2")]
+        await sut.send("b")
+        XCTAssertFalse(sut.lastRunWasCancelled)
+    }
+
+    func testSuccessDoesNotSetCancelledFlag() async {
+        mock.eventsToYield = [RunFinishedEvent(threadId: "t", runId: "r")]
+        await sut.send("a")
+        XCTAssertFalse(sut.lastRunWasCancelled)
+    }
 }
